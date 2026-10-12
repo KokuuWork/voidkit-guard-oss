@@ -170,6 +170,38 @@ class GuardConfig {
      */
     var stealthGenericKick: Boolean = true
 
+    // ---------- X 射线统计检测 ----------
+
+    /** 挖掘统计检测总开关（只告警不处置，误报零成本，默认开）。 */
+    var xrayStatsEnabled: Boolean = true
+
+    /** 稀有矿暴露度分析的滑动窗口长度（分钟）。 */
+    var xrayStatsWindowMinutes: Int = 30
+
+    /**
+     * 稀有矿占比告警阈值（累计口径）。正常玩法（探洞/合理条纹挖矿）远低于
+     * 5%，透视直奔矿脉会显著抬升 —— 0.20 留了 4 倍以上余量，宁保守不误报。
+     */
+    var xrayStatsRareRatioThreshold: Double = 0.20
+
+    /** 占比判定需要的最小总挖掘量。样本不足时沉默 —— 冷启动误报是统计检测头号杀手。 */
+    var xrayStatsMinMinedSamples: Int = 400
+
+    /** 暴露度告警阈值：窗口内挖到稀有矿的平均贴空气面数。正常玩家 ≥1（看得见才挖）。 */
+    var xrayStatsExposureThreshold: Double = 1.0
+
+    /** 暴露度判定需要的窗口内最小稀有矿样本数。 */
+    var xrayStatsMinRareSamples: Int = 12
+
+    /** 同一玩家同一告警原因的最小重复间隔（秒）。防日志刷屏。 */
+    var xrayStatsWarnCooldownSeconds: Int = 600
+
+    /** 命中时是否追加写 JSONL 证据文件（默认关 —— 告警日志已够用，落盘按需开）。 */
+    var xrayStatsJsonlEnabled: Boolean = false
+
+    /** JSONL 输出文件（相对 voidkit/ 根目录）。 */
+    var xrayStatsJsonlFile: String = "guard/xray-stats.jsonl"
+
     // ---------- 审计 ----------
 
     /** 审计与截屏记录保留天数。0 = 永久。 */
@@ -218,6 +250,13 @@ class GuardConfig {
         screenshotChunkSize = screenshotChunkSize.coerceIn(4096, 262144)
         screenshotBurstCount = screenshotBurstCount.coerceIn(1, 10)
         screenshotBurstIntervalMs = screenshotBurstIntervalMs.coerceIn(500, 30000)
+        xrayStatsWindowMinutes = xrayStatsWindowMinutes.coerceIn(1, 1440)
+        xrayStatsRareRatioThreshold = xrayStatsRareRatioThreshold.coerceIn(0.0, 1.0)
+        xrayStatsMinMinedSamples = xrayStatsMinMinedSamples.coerceIn(10, 1_000_000)
+        xrayStatsExposureThreshold = xrayStatsExposureThreshold.coerceIn(0.0, 6.0)
+        xrayStatsMinRareSamples = xrayStatsMinRareSamples.coerceIn(1, 100_000)
+        xrayStatsWarnCooldownSeconds = xrayStatsWarnCooldownSeconds.coerceIn(0, 86400)
+        if (xrayStatsJsonlFile.isBlank()) xrayStatsJsonlFile = "guard/xray-stats.jsonl"
         retentionDays = retentionDays.coerceIn(0, 3650)
         defaultBanDays = defaultBanDays.coerceIn(0, 36500)
         if (databaseFile.isBlank()) databaseFile = "guard/guard.db"
@@ -276,6 +315,15 @@ object GuardComments {
         "screenshotBurstIntervalMs" to "连拍间隔（毫秒）",
         "stealthSilentClient" to "客户端行为静默：不弹提示、不打 info 日志",
         "stealthGenericKick" to "踢人提示不透露检测细节（真实原因只进审计+管理员私信）",
+        "xrayStatsEnabled" to "X 射线统计检测总开关（稀有矿占比+暴露度行为分析，只告警不处置）",
+        "xrayStatsWindowMinutes" to "稀有矿暴露度分析的滑动窗口长度（分钟）",
+        "xrayStatsRareRatioThreshold" to "稀有矿占比告警阈值（0-1，默认 0.20；正常玩法远低于 5%）",
+        "xrayStatsMinMinedSamples" to "占比判定需要的最小总挖掘量（样本不足不判定，防冷启动误报）",
+        "xrayStatsExposureThreshold" to "暴露度告警阈值：挖到稀有矿的平均贴空气面数（正常玩家 ≥1）",
+        "xrayStatsMinRareSamples" to "暴露度判定需要的窗口内最小稀有矿样本数",
+        "xrayStatsWarnCooldownSeconds" to "同一玩家同一告警原因的最小重复间隔（秒）",
+        "xrayStatsJsonlEnabled" to "命中时追加写 JSONL 证据文件（默认关）",
+        "xrayStatsJsonlFile" to "JSONL 输出文件（相对 voidkit/ 根目录）",
         "retentionDays" to "审计与截屏记录保留天数，0=永久",
         "noticeEnabled" to "首次连接向玩家披露采集事项",
         "databaseFile" to "数据库文件（相对 voidkit/ 根目录）",

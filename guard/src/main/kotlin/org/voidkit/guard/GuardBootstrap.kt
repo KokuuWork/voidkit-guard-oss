@@ -11,6 +11,7 @@ import org.voidkit.core.platform.Platforms
 import org.voidkit.core.util.ConfigFiles
 import org.voidkit.guard.platform.GChannel
 import org.voidkit.guard.platform.neoforge.NeoforgeServer
+import org.voidkit.guard.platform.neoforge.NeoforgeServerEvents
 import org.voidkit.guard.server.AuditFeature
 import org.voidkit.guard.server.BanFeature
 import org.voidkit.guard.server.DeepScanFeature
@@ -22,6 +23,7 @@ import org.voidkit.guard.server.IntegrityFeature
 import org.voidkit.guard.server.ScreenshotFeature
 import org.voidkit.guard.server.ServerKeyPair
 import org.voidkit.guard.server.WhitelistStore
+import org.voidkit.guard.server.XrayStatisticsFeature
 
 /**
  * guard 的加载器无关装配中心。
@@ -53,6 +55,7 @@ object GuardBootstrap {
     val screenshots = ScreenshotFeature()
     val audit = AuditFeature()
     val deep = DeepScanFeature()
+    val xrayStats = XrayStatisticsFeature()
 
     /** 服务端共享上下文；null = 尚未装配（构造期/已关服）。 */
     @Volatile
@@ -80,6 +83,10 @@ object GuardBootstrap {
         PluginRegistry.register(screenshots, MODID)
         PluginRegistry.register(audit, MODID)
         PluginRegistry.register(deep, MODID)
+        PluginRegistry.register(xrayStats, MODID)
+
+        // 服务端游戏事件桥接（方块破坏 → X 射线统计检测；纯内存注册）
+        NeoforgeServerEvents.register()
 
         // 关服收尾走 core 的平台无关生命周期抽象（不直接抱 NeoForge 事件总线）
         Platforms.current.registerLifecycle(GuardLifecycle)
@@ -105,6 +112,7 @@ object GuardBootstrap {
         g.bans = bans.also { it.hub = g }
         g.screenshots = screenshots.also { it.hub = g }
         g.deep = deep.also { it.hub = g }
+        g.xrayStats = xrayStats.also { it.hub = g }
         audit.hub = g
         integrity.hub = g
 
