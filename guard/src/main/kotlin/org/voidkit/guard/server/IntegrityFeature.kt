@@ -3,16 +3,15 @@ package org.voidkit.guard.server
 import com.mojang.brigadier.arguments.StringArgumentType
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
-import net.neoforged.bus.api.SubscribeEvent
-import net.neoforged.neoforge.event.entity.player.PlayerEvent
 import org.voidkit.core.api.ApiJson
 import org.voidkit.core.api.ApiRouter
 import org.voidkit.core.api.ConfigSnapshots
 import org.voidkit.core.api.VoidkitServices
+import org.voidkit.core.api.events.VPlayerJoin
+import org.voidkit.core.api.events.VPlayerQuit
 import org.voidkit.core.util.Msg
 import org.voidkit.guard.common.IntegrityMode
 import org.voidkit.guard.platform.neoforge.NeoforgePlayer
-import net.minecraft.server.level.ServerPlayer
 
 /**
  * 模块一：客户端完整性校验（智能识别 / 哈希锁）。
@@ -33,18 +32,15 @@ class IntegrityFeature : GuardFeature() {
 
     // ---------- 事件接线 ----------
 
-    @SubscribeEvent
-    fun onLogin(e: PlayerEvent.PlayerLoggedInEvent) {
+    /** 走 core 的 VEvent 抽象（不直接监听 NeoForge 事件），与套件其他插件一致。 */
+    override fun onPlayerJoin(e: VPlayerJoin) {
         if (!enabled || !hub.config.enabled) return
-        val player = e.entity as? ServerPlayer ?: return
-        hub.sessions.onJoin(NeoforgePlayer(player))
+        hub.sessions.onJoin(NeoforgePlayer(e.player))
     }
 
-    @SubscribeEvent
-    fun onLogout(e: PlayerEvent.PlayerLoggedOutEvent) {
+    override fun onPlayerQuit(e: VPlayerQuit) {
         if (!enabled) return
-        val player = e.entity as? ServerPlayer ?: return
-        hub.sessions.onQuit(NeoforgePlayer(player))
+        hub.sessions.onQuit(NeoforgePlayer(e.player))
     }
 
     // ---------- 周期 ----------

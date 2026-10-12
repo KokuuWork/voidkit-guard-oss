@@ -1,12 +1,10 @@
 package org.voidkit.guard.server
 
-import net.minecraft.server.level.ServerPlayer
-import net.neoforged.bus.api.SubscribeEvent
-import net.neoforged.neoforge.event.entity.player.PlayerEvent
 import org.voidkit.core.api.ApiJson
 import org.voidkit.core.api.ApiRouter
 import org.voidkit.core.api.Feature
 import org.voidkit.core.api.VoidkitServices
+import org.voidkit.core.api.events.VPlayerJoin
 import org.voidkit.core.util.Msg
 import org.voidkit.guard.common.Fingerprint
 import org.voidkit.guard.platform.GPlayer
@@ -38,11 +36,10 @@ class BanFeature : GuardFeature() {
 
     // ---------- 登录即检 ----------
 
-    @SubscribeEvent
-    fun onLogin(e: PlayerEvent.PlayerLoggedInEvent) {
+    /** 走 core 的 VEvent 抽象（不直接监听 NeoForge 事件），与套件其他插件一致。 */
+    override fun onPlayerJoin(e: VPlayerJoin) {
         if (!enabled) return
-        val player = e.entity as? ServerPlayer ?: return
-        val gp = NeoforgePlayer(player)
+        val gp = NeoforgePlayer(e.player)
         val keys = buildList {
             add("uuid" to gp.uuid)
             add("name" to gp.name.lowercase())

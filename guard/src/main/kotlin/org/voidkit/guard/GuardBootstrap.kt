@@ -40,9 +40,7 @@ import org.voidkit.guard.server.WhitelistStore
  *   生命周期走 core 的 `Platforms.current.registerLifecycle`，游戏目录走
  *   `Platforms.current.gameDir()`，事件挂载走 core 的 PluginRegistry。
  * - 换加载器 = 新写一个入口文件 + 一个 `XxxMods` 实现，本文件零改动。
- * - 剩余迁移面（core 的 VEvent 抽象落地后）：`server/` 下两个 Feature 里的
- *   `@SubscribeEvent` 登录/登出监听（BanFeature / IntegrityFeature）——
- *   现在与套件其他插件保持一致，等 core 收口后一起搬。
+ * - 事件监听全部走 core 的 VEvent 回调（onPlayerJoin/onPlayerQuit），业务代码零 `net.neoforged` import。
  */
 object GuardBootstrap {
 
