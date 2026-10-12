@@ -1,0 +1,24 @@
+// voidkit_guard —— 反作弊组件（客户端 Agent + 服务端校验）。
+//
+// 与套件同构：只依赖内核（org.voidkit:core，组合构建自本地 voidkit 仓库），
+// 不 import 任何其他 voidkit 插件，也不反向被 core 依赖。
+// 业务代码不直接碰 net.minecraft / 加载器类 —— 全部收口在 platform/neoforge。
+dependencies {
+    // 组合构建（settings.gradle 的 includeBuild）会把 org.voidkit:core
+    // 自动替换为本地 voidkit 仓库的 :core 项目。
+    // 并入主仓库时改为 implementation project(':core') 即可。
+    implementation 'org.voidkit:core:1.1.0'
+
+    // SQLite 驱动：jarJar 声明在根 build.gradle（只 guard 背，约 13MB 原生库）
+    implementation 'org.xerial:sqlite-jdbc:3.53.4.0'
+}
+
+neoForge {
+    runs {
+        // 开发服务端：core + guard 都从 classpath 加载，和整合包真实加载路径一致
+        server {
+            server()
+            programArgument '--nogui'
+        }
+    }
+}

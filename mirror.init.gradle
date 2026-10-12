@@ -1,0 +1,62 @@
+// VoidkitCore 构建镜像重定向
+//
+// 背景：maven.neoforged.net 在中国大陆被 DNS 污染（解析到 Facebook/Dropbox 的 IP），
+//       直连必然超时。ModDevGradle 会在项目仓库之外自行注册该地址，
+//       所以无法只在 build.gradle 里解决，必须在 init script 层统一重写。
+//
+// 镜像：neoforged.forgecdn.net —— NeoForge 官方 CDN，覆盖 releases 与 mojang-meta 全站。
+//       （备选 BMCLAPI 覆盖不全，缺 net.neoforged:neoform-runtime，会导致 createMinecraftArtifacts 失败）
+//
+// 用法：./gradlew --init-script mirror.init.gradle build
+//       （build.sh / build.bat 已自动带上）
+
+def CDN = 'https://neoforged.forgecdn.net'
+def NEEDLE = 'maven.neoforged.net'
+
+/** 把原始 URL 中的 maven.neoforged.net 前缀换成官方 CDN，保留后续路径。 */
+def redirect = { String url ->
+    int idx = url.indexOf(NEEDLE)
+    if (idx < 0) {
+        return null
+    }
+    String suffix = url.substring(idx + NEEDLE.length())
+    if (suffix.isEmpty() || suffix == '/') {
+        suffix = '/releases'
+    }
+    return CDN + suffix
+}
+
+def rewrite = { repos ->
+    if (repos == null) {
+        return
+    }
+    try {
+        repos.all { repo ->
+            try {
+                if (repo instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository) {
+                    def url = repo.url.toString()
+                    def target = redirect(url)
+                    if (target != null) {
+                        repo.setUrl(target)
+                        println "[voidkit-mirror] ${url} -> ${target}"
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    } catch (Exception ignored) {
+    }
+}
+
+settingsEvaluated { settings ->
+    rewrite(settings.pluginManagement.repositories)
+    try {
+        rewrite(settings.dependencyResolutionManagement.repositories)
+    } catch (Exception ignored) {
+    }
+}
+
+allprojects { p ->
+    rewrite(p.repositories)
+    rewrite(p.buildscript.repositories)
+}

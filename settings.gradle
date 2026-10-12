@@ -1,0 +1,25 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url = 'https://maven.aliyun.com/repository/public' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'voidkit-guard'
+
+// ---------------------------------------------------------------
+// 组合构建：直接消费本地 voidkit 仓库（KokuuWork/voidkit）的 :core 项目。
+//
+// guard 是 voidkit 套件的第 9 个组件，铁律不变：只依赖 core，零跨插件 import。
+// 这里用组合构建而不是 flatDir 拷 jar —— core 升级时这边自动跟上，无需手工同步。
+//
+// 坐标 org.voidkit:core:1.1.0 会被 Gradle 自动替换成 included build 的 :core
+// （subprojects{} 里 group=org.voidkit、name=core，坐标天然匹配）。
+// 将来 guard 并入 voidkit 主仓库时：把本文件删掉，guard/build.gradle 里
+// 改成 implementation project(':core') 即可，其余代码零改动。
+// ---------------------------------------------------------------
+includeBuild '../../2026-10-12-15-46-51/kokuucore'
+
+include 'guard'
