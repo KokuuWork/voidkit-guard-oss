@@ -14,16 +14,25 @@ guard/build/libs/voidkit_guard-1.0.0.jar   ← 唯一产物，客户端服务端
 ```
 guard/
 ├── common/        协议、加密、内存机密保护（纯 Kotlin，零 MC import）
-├── platform/      抽象接口 GServer/GChannel + neoforge 实现
-│                  ★ 唯一碰 net.minecraft / 加载器的一层
+├── platform/      抽象接口 GServer/GChannel/GMods + GuardPlatforms 持有者
+│   └── neoforge/  ★ 唯一碰 net.neoforged.* 的一层：适配实现 + @Mod 入口
 ├── server/        五个 Feature：完整性 / 封禁 / 截屏 / 审计 / 深度扫描
-└── client/        Agent：握手应答、硬件采集、截屏、深度扫描
+├── client/        Agent：握手应答、硬件采集、截屏、深度扫描
+└── GuardBootstrap.kt   加载器无关装配（模块注册 + hub + 生命周期）
 ```
 
 - **插件只依赖 core**，零跨插件 import（套件铁律）。
-- 移植 Forge / Fabric = 只重写 `platform/neoforge/`，`common` + `server` 业务代码零改动。
-- 将来 core 长出 `core.platform`（voidkit issue #1）时，把 `platform/neoforge` 的调用点换成
-  core.platform 即可，业务层不动。
+- **与 core 1.2.0 platform 层对接**（不再自己造轮子）：
+  - 游戏目录 → `Platforms.current.gameDir()`
+  - 关服收尾 → `Platforms.current.registerLifecycle(ServerLifecycleListener)`
+  - 事件挂载 → core 的 PluginRegistry（`Feature` 生命周期驱动）
+- **guard 自己只抽象 core 没有的**：`GMods`（mod 清单枚举 ——
+  NeoForge 用 `ModList`，Fabric 用 `FabricLoader`，反作弊特有需求）。
+- 换加载器 = 新增 `platform/fabric/`（一个入口文件 + 一个 `FabricMods`），
+  `common` / `server` / `client` 业务代码零改动。
+- 剩余迁移面（等 core 的 VEvent 桥接落地后一起搬）：`server/` 下
+  BanFeature / IntegrityFeature 里各一处 `@SubscribeEvent` 登录/登出监听
+  （约 20 行，改成覆写 `Feature.onPlayerJoin/onPlayerQuit` 即可）。
 
 ## 2. 五个模块
 
@@ -138,6 +147,10 @@ API（经 `voidkit_web` 的 ApiRouter 暴露，给管理面板）：
 ```
 
 - JDK 21（`C:/Users/26703/.jdks/jdk-21.0.12.1+1`），Gradle 8.12.1，Kotlin 2.1.0。
-- 组合构建消费本地 `KokuuWork/voidkit` 仓库的 `:core`（`settings.gradle` 的 includeBuild）——
+- 依赖 **voidkit_core 1.2.0**（platform 适配层版本）。组合构建消费本地
+  `KokuuWork/voidkit` 仓库的 `:core`（`settings.gradle` 的 includeBuild）——
   并入主仓库时删掉 includeBuild、依赖改成 `project(':core')` 即可。
 - 全 Kotlin，注释讲「为什么」；零 mixin；中文注释。
+- ⚠️ 组合构建下 guard 运行时**不要**自己补 `additionalRuntimeClasspath kotlin-stdlib` ——
+  core 的 jarJar 嵌套 kotlin 会上运行时 classpath，两边都是 module-named jar，
+  JPMS 直接 `ResolutionException`（服务端起不来）。kotlin 运行时由 core 提供。

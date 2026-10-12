@@ -1,14 +1,12 @@
 package org.voidkit.guard.client.scan
 
-import net.neoforged.fml.ModList
-import net.neoforged.neoforgespi.language.IModInfo
 import org.voidkit.guard.common.GCrypto
 import org.voidkit.guard.common.ModEntry
 import org.voidkit.guard.common.Signal
-import net.neoforged.fml.loading.FMLPaths
+import org.voidkit.guard.platform.GModInfo
+import org.voidkit.guard.platform.GuardPlatforms
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.attribute.FileTime
 
 /**
  * 客户端 mod 清单扫描。
@@ -36,12 +34,15 @@ object ModScanner {
      * @param forceFull true = 忽略本地缓存全量重算（中途复检用）。
      *   缓存按 (size, mtime) 命中，理论上「换文件但保留 size+mtime」能骗过缓存 ——
      *   复检时的全量重扫就是补这个缺口的。
+     *
+     * mod 枚举走 [GuardPlatforms.mods]（加载器抽象层）—— 不在业务代码里
+     * 直接摸 `ModList`，Fabric 移植时这里零改动。
      */
     fun collect(forceFull: Boolean = false): List<ModEntry> = runCatching {
         val cache = if (forceFull) HashMap() else loadCache()
         var dirty = false
         val out = ArrayList<ModEntry>()
-        for (info in ModList.get().mods) {
+        for (info in GuardPlatforms.mods.loadedMods()) {
             val entry = entryFor(info, cache, forceFull)
             if (entry == null) {
                 dirty = true
@@ -53,10 +54,8 @@ object ModScanner {
         out.sortedBy { it.id }
     }.getOrElse { emptyList() }
 
-    private fun entryFor(info: IModInfo, cache: MutableMap<String, CacheItem>, forceFull: Boolean): ModEntry? {
-        val id = info.modId
-        val version = info.version?.toString() ?: "0"
-        val path: Path = runCatching { info.owningFile.file.filePath }.getOrNull() ?: return null
+    private fun entryFor(info: GModInfo, cache: MutableMap<String, CacheItem>, forceFull: Boolean): ModEntry? {
+        val path: Path = info.filePath?.let { runCatching { Path.of(it) }.getOrNull() } ?: return null
         val file = path.toFile()
         if (!file.isFile) return null
 
@@ -70,7 +69,13 @@ object ModScanner {
             runCatching { GCrypto.sha256Hex(Files.readAllBytes(path)) }.getOrElse { return null }
                 .also { cache[key] = CacheItem(size, mtime, it) }
         }
-        return ModEntry(id = id, version = version, file = file.name, size = size, sha256 = hash)
+        return ModEntry(
+            id = info.id,
+            version = info.version,
+            file = file.name,
+            size = size,
+            sha256 = hash,
+        )
     }
 
     /**
@@ -99,7 +104,7 @@ object ModScanner {
     private class CacheItem(val size: Long, val mtime: String, val sha256: String)
 
     private fun cachePath(): Path =
-        FMLPaths.GAMEDIR.get().resolve(CACHE_FILE)
+        GuardPlatforms.gameDir().resolve(CACHE_FILE)
 
     private fun loadCache(): MutableMap<String, CacheItem> = runCatching {
         val f = cachePath().toFile()
@@ -136,7 +141,4 @@ object ModScanner {
             tmp.renameTo(f)
         }
     }
-
-    @Suppress("unused")
-    private fun unusedFileTime(): FileTime? = null
 }

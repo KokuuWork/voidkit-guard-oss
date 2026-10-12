@@ -1,9 +1,11 @@
 package org.voidkit.guard.client
 
 import net.minecraft.client.Minecraft
-import net.neoforged.fml.loading.FMLPaths
+
 import org.voidkit.guard.common.GuardMsg
 import org.voidkit.guard.common.GuardWire
+import org.voidkit.guard.GuardBootstrap
+import org.voidkit.guard.platform.GuardPlatforms
 import java.io.File
 
 /**
@@ -22,7 +24,7 @@ object GuardClient {
                 // （或被中间代理改过）—— 不回应，让它收不到 auth 自己去超时。
                 val signed = org.voidkit.guard.common.SignedChallenge.decode(wire.body)
                 if (!GuardKeys.verify(signed.challenge, signed.signature)) {
-                    org.voidkit.guard.VoidkitGuard.LOG.debug("[guard-client] 挑战签名验证失败，已忽略")
+                    GuardBootstrap.LOG.debug("[guard-client] 挑战签名验证失败，已忽略")
                     return
                 }
                 ClientAgent.onChallenge(
@@ -73,6 +75,6 @@ object GuardClient {
 
     private fun markerFile(server: String): File {
         val hash = Integer.toHexString(server.hashCode())
-        return FMLPaths.GAMEDIR.get().resolve("voidkit_guard/noticed-$hash.txt").toFile()
+        return GuardPlatforms.gameDir().resolve("voidkit_guard/noticed-$hash.txt").toFile()
     }
 }

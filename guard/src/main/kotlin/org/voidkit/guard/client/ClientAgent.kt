@@ -1,13 +1,13 @@
 package org.voidkit.guard.client
 
 import net.minecraft.client.Minecraft
-import net.neoforged.neoforge.network.PacketDistributor
 import org.voidkit.guard.common.Auth
 import org.voidkit.guard.common.Challenge
 import org.voidkit.guard.common.ClientReport
 import org.voidkit.guard.common.DeepScanReq
 import org.voidkit.guard.common.GCrypto
 import org.voidkit.guard.common.GuardMsg
+import org.voidkit.guard.GuardBootstrap
 import org.voidkit.guard.common.GuardWire
 import org.voidkit.guard.common.HeapGuard
 import org.voidkit.guard.common.Keepalive
@@ -20,7 +20,6 @@ import org.voidkit.guard.client.hw.EnvCollector
 import org.voidkit.guard.client.hw.Hardware
 import org.voidkit.guard.client.scan.ModScanner
 import org.voidkit.guard.client.scan.SelfIntegrity
-import org.voidkit.guard.platform.neoforge.GuardWirePayload
 import java.util.UUID
 
 /**
@@ -187,13 +186,13 @@ object ClientAgent {
 
     private fun send(id: String, body: ByteArray) {
         runCatching {
-            PacketDistributor.sendToServer(GuardWirePayload(GuardWire(id, body)))
+            GuardBootstrap.channel?.sendToServer(id, body)
         }.onFailure { log("发送 $id 失败：${it.message}") }
     }
 
     private fun log(msg: String) {
         // 静默原则：只有 debug 级。出问题时服主让玩家开 debug 日志即可排查
-        org.voidkit.guard.VoidkitGuard.LOG.debug("[guard-client] {}", msg)
+        GuardBootstrap.LOG.debug("[guard-client] {}", msg)
     }
 
     @Suppress("unused")

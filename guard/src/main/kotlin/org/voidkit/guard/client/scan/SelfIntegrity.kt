@@ -1,9 +1,10 @@
 package org.voidkit.guard.client.scan
 
-import net.neoforged.fml.loading.FMLPaths
+
 import org.voidkit.guard.common.GCrypto
 import org.voidkit.guard.common.SelfIntegrity
 import org.voidkit.guard.common.Signal
+import org.voidkit.guard.platform.GuardPlatforms
 import java.io.File
 import java.lang.management.ManagementFactory
 
@@ -74,7 +75,7 @@ object SelfIntegrity {
     }.getOrNull()
 
     private fun baselineFile(): File =
-        FMLPaths.GAMEDIR.get().resolve(BASELINE_FILE).toFile()
+        GuardPlatforms.gameDir().resolve(BASELINE_FILE).toFile()
 
     private fun readBaseline(): String? = runCatching {
         val f = baselineFile()

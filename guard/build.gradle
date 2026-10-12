@@ -7,7 +7,10 @@ dependencies {
     // 组合构建（settings.gradle 的 includeBuild）会把 org.voidkit:core
     // 自动替换为本地 voidkit 仓库的 :core 项目。
     // 并入主仓库时改为 implementation project(':core') 即可。
-    implementation 'org.voidkit:core:1.1.0'
+    // ⚠️ 版本号跟随 core 发布：1.2.0 起 core 内置 platform 适配层
+    //    （Platforms.current.gameDir() / registerLifecycle），guard 的
+    //    加载器差异全部走它，不再直接摸 FMLPaths。
+    implementation 'org.voidkit:core:1.2.0'
 
     // SQLite 驱动：jarJar 声明在根 build.gradle（只 guard 背，约 13MB 原生库）
     implementation 'org.xerial:sqlite-jdbc:3.53.4.0'

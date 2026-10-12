@@ -5,6 +5,7 @@ import net.minecraft.server.level.ServerPlayer
 import net.neoforged.neoforge.network.PacketDistributor
 import org.voidkit.guard.platform.GChannel
 import org.voidkit.guard.platform.GPlayer
+import org.voidkit.guard.GuardBootstrap
 import org.voidkit.guard.platform.GServer
 
 /**
@@ -66,11 +67,11 @@ class NeoforgeServer(private val server: MinecraftServer) : GServer {
     }
 
     override fun logInfo(message: String) {
-        org.voidkit.guard.VoidkitGuard.LOG.info(message)
+        GuardBootstrap.LOG.info(message)
     }
 
     override fun logWarn(message: String) {
-        org.voidkit.guard.VoidkitGuard.LOG.warn(message)
+        GuardBootstrap.LOG.warn(message)
     }
 }
 
@@ -89,6 +90,21 @@ class NeoforgeChannel : GChannel {
         val sp = (player as? NeoforgePlayer)?.unwrap() ?: return
         val conn = sp.connection ?: return // 已断线的玩家：静默丢弃，不炸
         PacketDistributor.sendToPlayer(sp, GuardWirePayload(org.voidkit.guard.common.GuardWire(msgId, body)))
+    }
+
+    /**
+     * 客户端 → 服务端。
+     *
+     * 只在客户端进程有意义（服务端进程里没人调；真被调了也只是白发）。
+     * 未连接服务器时 sendToServer 会静默失败 —— Agent 只在收到 challenge
+     * 之后才发东西，那时必然在连接中。
+     */
+    override fun sendToServer(msgId: String, body: ByteArray) {
+        runCatching {
+            PacketDistributor.sendToServer(
+                GuardWirePayload(org.voidkit.guard.common.GuardWire(msgId, body))
+            )
+        }
     }
 
     /** 由载荷处理器调用（网络线程）。 */

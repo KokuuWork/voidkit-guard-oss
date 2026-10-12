@@ -1,12 +1,13 @@
 package org.voidkit.guard.client
 
-import net.neoforged.fml.loading.FMLPaths
+
 import org.voidkit.guard.common.DeepScanReq
 import org.voidkit.guard.common.DeepScanResult
 import org.voidkit.guard.common.FolderEntry
 import org.voidkit.guard.common.IpEntry
 import org.voidkit.guard.common.ProcEntry
 import org.voidkit.guard.common.Signal
+import org.voidkit.guard.platform.GuardPlatforms
 import java.io.File
 import java.net.NetworkInterface
 import java.util.concurrent.TimeUnit
@@ -163,7 +164,7 @@ object DeepScanner {
     // ---------------------------------------------------------------- 文件夹
 
     private fun listFolders(targets: List<String>): List<FolderEntry> {
-        val root = FMLPaths.GAMEDIR.get().toFile()
+        val root = GuardPlatforms.gameDir().toFile()
         val out = ArrayList<FolderEntry>()
         for (target in targets) {
             val dir = if (target.isBlank()) root else File(root, target)

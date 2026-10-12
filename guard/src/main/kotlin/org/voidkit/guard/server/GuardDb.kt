@@ -1,6 +1,7 @@
 package org.voidkit.guard.server
 
 import org.sqlite.SQLiteConfig
+import org.voidkit.guard.GuardBootstrap
 import org.sqlite.SQLiteDataSource
 import java.nio.file.Files
 import java.nio.file.Path
@@ -120,7 +121,7 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
     private val readConnLocal = ThreadLocal<Connection>()
     private val readConns = CopyOnWriteArrayList<Connection>()
 
-    private val LOG = org.voidkit.guard.VoidkitGuard.LOG
+    private val LOG = GuardBootstrap.LOG
 
     // ---------------- 生命周期 ----------------
 

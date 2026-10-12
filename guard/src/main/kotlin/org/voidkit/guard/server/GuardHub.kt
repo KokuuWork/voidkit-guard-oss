@@ -5,11 +5,12 @@ import org.voidkit.guard.common.DeepScanResult
 import org.voidkit.guard.platform.GChannel
 import org.voidkit.guard.platform.GPlayer
 import org.voidkit.guard.platform.GServer
+import org.voidkit.guard.GuardBootstrap
 
 /**
  * guard 模块基类：持有共享 [GuardHub]。
  *
- * 四大模块都继承它，装配时由 `VoidkitGuard` 统一注入 hub ——
+ * 四大模块都继承它，装配时由 `GuardBootstrap` 统一注入 hub ——
  * 模块自己不去单例里找依赖，保持可测试、可拆装。
  *
  * hub 的装配发生在 [onServerAboutToStart]（每个模块都会调，幂等）：
@@ -20,7 +21,7 @@ abstract class GuardFeature : org.voidkit.core.api.Feature() {
     lateinit var hub: GuardHub
 
     final override fun onServerAboutToStart(server: net.minecraft.server.MinecraftServer) {
-        hub = org.voidkit.guard.VoidkitGuard.assembleHub(server)
+        hub = GuardBootstrap.assembleHub(server)
         onStart(server)
     }
 
@@ -34,7 +35,7 @@ abstract class GuardFeature : org.voidkit.core.api.Feature() {
  * 四大模块（完整性/封禁/截屏/审计）之间不互相 import，全靠这一个 hub 中转 ——
  * 和套件「跨模块走 CoreServices」是同一条纪律：任意一个模块拆出去都能单独跑。
  *
- * 装配顺序（VoidkitGuard 的 ServerAboutToStartEvent 里）：
+ * 装配顺序（GuardBootstrap.assembleHub，ServerAboutToStart 阶段）：
  * ```
  * config.load() → db.open() → keys.load() → whitelist.load()
  *   → new BanFeature/ScreenshotFeature/AuditFeature/IntegrityFeature（挂进 hub）

@@ -62,4 +62,13 @@ interface GChannel {
 
     /** 发一条信封消息给玩家（明文握手期与加密会话期都用它）。 */
     fun send(player: GPlayer, msgId: String, body: ByteArray)
+
+    /**
+     * 客户端 → 服务端发一条信封消息。
+     *
+     * 只在客户端进程调用（服务端没有「发给服务端」的概念）。
+     * NeoForge 实现是 `PacketDistributor.sendToServer` —— 加载器 API，
+     * 所以必须待在 platform 层，客户端 Agent 不直接摸。
+     */
+    fun sendToServer(msgId: String, body: ByteArray)
 }
