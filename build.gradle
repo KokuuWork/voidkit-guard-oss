@@ -7,7 +7,9 @@ plugins {
 // 公共版本。与 voidkit 主仓库保持一致。
 // ==============================================================
 ext {
-    guardVersion = '1.0.0'
+    // 全部 release 均为测试版（pre-release），不建议用于生产环境。
+    // 与 voidkit 套件其余模块保持同一命名规格：<mod>-beta0.1+mc<版本>-<loader>.jar
+    guardVersion = 'beta0.1'
     guardGroup = 'org.voidkit'
     guardAuthors = 'Kokuu Studio'
     guardLicense = 'MIT'
@@ -136,6 +138,8 @@ project(':server') {
     }
 
     jar {
+        // 产物命名规格与套件对齐：<mod>-<version>+mc<mc>-<loader>.jar
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
         manifest {
             attributes([
                     'Specification-Title'   : modId,
@@ -195,6 +199,8 @@ project(':client') {
     }
 
     jar {
+        // 产物命名规格与套件对齐：<mod>-<version>+mc<mc>-<loader>.jar
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
         manifest {
             attributes([
                     'Specification-Title'   : modId,
