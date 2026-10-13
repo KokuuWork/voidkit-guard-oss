@@ -10,7 +10,7 @@ import org.voidkit.guard.platform.GPlayer
  *
  * 客户端只做一件事：把报文发给服务端（`sendToServer`）。它**不含**
  * 服务端的发包给玩家、也不含服务端收包回调 —— 那两半在服务端 jar 里。
- * 这样公开客户端 jar 时，别人反编译看到的只是「怎么把加密报文递给服务端」，
+ * 客户端 jar 交付到玩家手上后，反编译看到的只是「怎么把加密报文递给服务端」，
  * 看不到服务端的会话管理 / 密钥处理 / 检测策略。
  */
 class NeoforgeClientChannel : GChannel {

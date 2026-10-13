@@ -18,7 +18,7 @@ import org.voidkit.guard.platform.GuardPlatforms
  * 3. 注册网络载荷，收到服务端消息后交给 [GuardClient]
  *
  * **不碰 core、不碰服务端逻辑** —— 客户端 jar 的 class 里没有一行服务端代码，
- * 公开出去也反编译不出服务端的密钥处理与检测策略。
+ * 即使反编译也拿不到服务端的密钥处理与检测策略。
  *
  * channel 标识 `voidkit_guard:wire` 与服务端一致（硬编码，与 modId 解耦），
  * 两侧各注册一份副本即可通信。
