@@ -1,0 +1,19 @@
+# 源码统一 LF，跨仓同步不产生行尾噪音
+*.kt        text eol=lf
+*.kts       text eol=lf
+*.gradle    text eol=lf
+*.properties text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf
+*.sh        text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+
+# 二进制 / 生成物：不做任何转换
+*.jar   binary
+*.png   binary
+*.xdb   binary
+*.pem   binary
+*.db    binary
+*.db-shm binary
+*.db-wal binary
