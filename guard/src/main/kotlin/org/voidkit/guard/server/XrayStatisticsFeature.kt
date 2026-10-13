@@ -35,6 +35,8 @@ class XrayStatisticsFeature : GuardFeature() {
     override val id = "guard_xray_stats"
     override val displayName = "挖掘统计检测"
     override val description = "稀有矿占比 + 挖矿暴露度滑动窗口分析，透视行为只告警不处置"
+    // 默认开：只告警不处置、误报零成本，符合「装上就能用」。要关走面板/配置 features 表。
+    override val defaultEnabled = true
 
     // ---------- 矿物分级 ----------
 
@@ -71,7 +73,7 @@ class XrayStatisticsFeature : GuardFeature() {
      * @param exposedAirFaces 被挖方块六面中贴着空气的面数（近似暴露度）。
      */
     fun onBlockBreak(player: GPlayer, blockId: String, exposedAirFaces: Int) {
-        if (!enabled || !hub.config.xrayStatsEnabled) return
+        if (!enabled) return
         val s = stats.getOrPut(player.uuid) { PlayerStats() }
         s.minedTotal++
 
@@ -176,11 +178,9 @@ class XrayStatisticsFeature : GuardFeature() {
 
     override fun onStart(server: net.minecraft.server.MinecraftServer) {
         val cfg = hub.config
-        if (cfg.xrayStatsEnabled) {
-            hub.logInfo(
-                "guard: X 射线统计检测已启用（窗口 ${cfg.xrayStatsWindowMinutes} 分钟｜占比阈值 ${"%.0f".format(cfg.xrayStatsRareRatioThreshold * 100)}%｜暴露度阈值 ${cfg.xrayStatsExposureThreshold}｜JSONL ${if (cfg.xrayStatsJsonlEnabled) "开" else "关"}）"
-            )
-        }
+        hub.logInfo(
+            "guard: X 射线统计检测已启用（窗口 ${cfg.xrayStatsWindowMinutes} 分钟｜占比阈值 ${"%.0f".format(cfg.xrayStatsRareRatioThreshold * 100)}%｜暴露度阈值 ${cfg.xrayStatsExposureThreshold}｜JSONL ${if (cfg.xrayStatsJsonlEnabled) "开" else "关"}）"
+        )
     }
 
     override fun onServerStop(server: net.minecraft.server.MinecraftServer) {

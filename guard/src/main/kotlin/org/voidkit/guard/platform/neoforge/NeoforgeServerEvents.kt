@@ -36,6 +36,8 @@ object NeoforgeServerEvents {
         // ---- 方块破坏 → X 射线统计检测 ----
         NeoForge.EVENT_BUS.addListener { e: BlockEvent.BreakEvent ->
             val h = GuardBootstrap.hub ?: return@addListener
+            // 模块关了（面板/配置 features 表）就整段跳过，不做无谓的方向扫描
+            if (!h.xrayStats.enabled) return@addListener
             val sp = e.player as? ServerPlayer ?: return@addListener
             // 创造/旁观模式挖矿是管理员行为，不进统计 —— 否则清图会瞬间污染比率
             if (sp.isCreative || sp.isSpectator) return@addListener
@@ -60,7 +62,7 @@ object NeoforgeServerEvents {
         // directEntity 是箭 —— 那种「伤害」测 reach 没有意义（飞行道具本来就远程）。
         NeoForge.EVENT_BUS.addListener { e: LivingIncomingDamageEvent ->
             val h = GuardBootstrap.hub ?: return@addListener
-            if (!h.config.combatEnabled) return@addListener
+            if (!h.combat.enabled) return@addListener
             val attacker = e.source.directEntity as? ServerPlayer ?: return@addListener
             // 创造/旁观在桥接层滤掉：那俩模式 5 格互动范围合法，会污染 reach 读数
             if (attacker.isCreative || attacker.isSpectator) return@addListener
@@ -86,7 +88,7 @@ object NeoforgeServerEvents {
         // 代价：O(在线玩家) 两次浮点读 + 一次 map 查，50 人局约 150 操作/tick，可忽略。
         NeoForge.EVENT_BUS.addListener { e: ServerTickEvent.Post ->
             val h = GuardBootstrap.hub ?: return@addListener
-            if (!h.config.combatEnabled) return@addListener
+            if (!h.combat.enabled) return@addListener
             val players = e.server.playerList.players ?: return@addListener
             for (sp in players) {
                 if (sp.isCreative || sp.isSpectator) continue

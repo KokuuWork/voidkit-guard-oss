@@ -433,6 +433,8 @@ class IntegrityFeature : GuardFeature() {
                 "guard.onFail" to cfg.integrityOnFail,
                 "guard.keepalive" to cfg.keepaliveEnabled,
                 "guard.screenshot" to cfg.screenshotEnabled,
+                "guard.xray" to hub.xrayStats.enabled,
+                "guard.combat" to hub.combat.enabled,
                 "guard.bans" to hub.bans.count(),
             )
         }

@@ -43,6 +43,9 @@ class CombatFeature : GuardFeature() {
     override val id = "guard_combat"
     override val displayName = "战斗遥测"
     override val description = "reach/瞄准急转/CPS 机械性滑动窗口分析，战斗类作弊只告警不处置"
+    // 默认关：战斗检测是误报重灾区（高延迟会同时抬高 reach/snap 读数），
+    // 宁可装完不动，服主想开再去面板「模块」页或 core 配置 features 表打开。
+    override val defaultEnabled = false
 
     /** 一次攻击的样本。 */
     private class AttackSample(val at: Long, val distance: Double, val snapDeg: Double)
@@ -66,7 +69,7 @@ class CombatFeature : GuardFeature() {
      * 只存 delta 不存历史：一个 tick 一次覆盖，内存 O(在线玩家)。
      */
     fun onRotate(uuid: String, yaw: Float, pitch: Float) {
-        if (!enabled || !hub.config.combatEnabled) return
+        if (!enabled) return
         val s = stats.getOrPut(uuid) { PlayerCombat() }
         if (!s.lastYaw.isNaN()) {
             val dyaw = abs(Mth.wrapDegrees(yaw - s.lastYaw))
@@ -91,7 +94,7 @@ class CombatFeature : GuardFeature() {
      * @param snapDeg 攻击所在 tick 的合成视角角速度（度）。
      */
     fun onAttack(player: GPlayer, distance: Double, snapDeg: Double) {
-        if (!enabled || !hub.config.combatEnabled) return
+        if (!enabled) return
         val cfg = hub.config
         val s = stats.getOrPut(player.uuid) { PlayerCombat() }
         val now = System.currentTimeMillis()
@@ -200,11 +203,9 @@ class CombatFeature : GuardFeature() {
 
     override fun onStart(server: net.minecraft.server.MinecraftServer) {
         val cfg = hub.config
-        if (cfg.combatEnabled) {
-            hub.logInfo(
-                "guard: 战斗遥测已启用（窗口 ${cfg.combatWindowMinutes} 分钟｜reach >${cfg.combatReachThreshold}｜急转 >${cfg.combatSnapThresholdDeg.toInt()}°｜CPS ≥${cfg.combatCpsMin} 且 CV ≤${cfg.combatCpsCvThreshold}｜JSONL ${if (cfg.combatJsonlEnabled) "开" else "关"}）"
-            )
-        }
+        hub.logInfo(
+            "guard: 战斗遥测已启用（窗口 ${cfg.combatWindowMinutes} 分钟｜reach >${cfg.combatReachThreshold}｜急转 >${cfg.combatSnapThresholdDeg.toInt()}°｜CPS ≥${cfg.combatCpsMin} 且 CV ≤${cfg.combatCpsCvThreshold}｜JSONL ${if (cfg.combatJsonlEnabled) "开" else "关"}）"
+        )
     }
 
     override fun onServerStop(server: net.minecraft.server.MinecraftServer) {

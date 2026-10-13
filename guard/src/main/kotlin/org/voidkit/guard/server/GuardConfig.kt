@@ -171,9 +171,10 @@ class GuardConfig {
     var stealthGenericKick: Boolean = true
 
     // ---------- X 射线统计检测 ----------
-
-    /** 挖掘统计检测总开关（只告警不处置，误报零成本，默认开）。 */
-    var xrayStatsEnabled: Boolean = true
+    //
+    // 开/关不落在这里，走 core 的 Feature.enabled（面板「模块」页 / core 配置
+    // features 表都能切，见 XrayStatisticsFeature.defaultEnabled）——避免同一件事
+    // 两处开关打架。下面的都是「开着时怎么判」的阈值，不是开关。
 
     /** 稀有矿暴露度分析的滑动窗口长度（分钟）。 */
     var xrayStatsWindowMinutes: Int = 30
@@ -203,8 +204,10 @@ class GuardConfig {
     var xrayStatsJsonlFile: String = "guard/xray-stats.jsonl"
 
     // ---------- 战斗遥测（reach / 瞄准急转 / CPS；只告警不处置） ----------
-
-    var combatEnabled: Boolean = true
+    //
+    // 开/关同样走 core 的 Feature.enabled（CombatFeature.defaultEnabled=false，
+    // 即**默认关**）——战斗检测是误报重灾区，宁可默认不动，服主想开了再去
+    // 面板/配置打开。下面都是阈值，不是开关。
 
     /** 战斗遥测滑动窗口（分钟）。窗口太短样本不够，太长反应迟钝。 */
     var combatWindowMinutes: Int = 10
@@ -362,7 +365,6 @@ object GuardComments {
         "screenshotBurstIntervalMs" to "连拍间隔（毫秒）",
         "stealthSilentClient" to "客户端行为静默：不弹提示、不打 info 日志",
         "stealthGenericKick" to "踢人提示不透露检测细节（真实原因只进审计+管理员私信）",
-        "xrayStatsEnabled" to "X 射线统计检测总开关（稀有矿占比+暴露度行为分析，只告警不处置）",
         "xrayStatsWindowMinutes" to "稀有矿暴露度分析的滑动窗口长度（分钟）",
         "xrayStatsRareRatioThreshold" to "稀有矿占比告警阈值（0-1，默认 0.20；正常玩法远低于 5%）",
         "xrayStatsMinMinedSamples" to "占比判定需要的最小总挖掘量（样本不足不判定，防冷启动误报）",
