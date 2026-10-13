@@ -202,6 +202,43 @@ class GuardConfig {
     /** JSONL 输出文件（相对 voidkit/ 根目录）。 */
     var xrayStatsJsonlFile: String = "guard/xray-stats.jsonl"
 
+    // ---------- 战斗遥测（reach / 瞄准急转 / CPS；只告警不处置） ----------
+
+    var combatEnabled: Boolean = true
+
+    /** 战斗遥测滑动窗口（分钟）。窗口太短样本不够，太长反应迟钝。 */
+    var combatWindowMinutes: Int = 10
+
+    /**
+     * reach 告警阈值（格）：攻击者眼睛到目标碰撞箱的距离。生存模式原版
+     * 互动范围 3.0 + 延迟补偿余量；持续超出即远程攻击特征。
+     */
+    var combatReachThreshold: Double = 3.75
+
+    /** reach 判定：窗口内超距攻击的占比阈值（单次超距可能是延迟，占比才说明问题）。 */
+    var combatReachRatioThreshold: Double = 0.30
+
+    /** 瞄准急转阈值（度）：攻击所在 tick 的合成视角角速度。人类打斗时视角钉在目标上。 */
+    var combatSnapThresholdDeg: Double = 30.0
+
+    /** 急转判定：带大急转的攻击占比阈值（人类偶尔也甩镜头，高比例才是自动瞄准）。 */
+    var combatSnapRatioThreshold: Double = 0.40
+
+    /** CPS 告警下限：只抓「既快又稳」—— 慢而稳的点击器无害。 */
+    var combatCpsMin: Double = 8.0
+
+    /** CPS 变异系数阈值：σ/μ 低于它说明点击过于恒定（人类高 CPS 时手抖）。 */
+    var combatCpsCvThreshold: Double = 0.12
+
+    /** 三个信号共用的最小样本数。样本不足时沉默 —— 冷启动误报是统计检测头号杀手。 */
+    var combatMinSamples: Int = 10
+
+    var combatWarnCooldownSeconds: Int = 600
+
+    var combatJsonlEnabled: Boolean = false
+
+    var combatJsonlFile: String = "guard/combat-stats.jsonl"
+
     // ---------- 审计 ----------
 
     /** 审计与截屏记录保留天数。0 = 永久。 */
@@ -251,6 +288,16 @@ class GuardConfig {
         screenshotBurstCount = screenshotBurstCount.coerceIn(1, 10)
         screenshotBurstIntervalMs = screenshotBurstIntervalMs.coerceIn(500, 30000)
         xrayStatsWindowMinutes = xrayStatsWindowMinutes.coerceIn(1, 1440)
+        combatWindowMinutes = combatWindowMinutes.coerceIn(1, 1440)
+        combatReachThreshold = combatReachThreshold.coerceIn(2.0, 8.0)
+        combatReachRatioThreshold = combatReachRatioThreshold.coerceIn(0.05, 1.0)
+        combatSnapThresholdDeg = combatSnapThresholdDeg.coerceIn(5.0, 180.0)
+        combatSnapRatioThreshold = combatSnapRatioThreshold.coerceIn(0.05, 1.0)
+        combatCpsMin = combatCpsMin.coerceIn(2.0, 30.0)
+        combatCpsCvThreshold = combatCpsCvThreshold.coerceIn(0.01, 1.0)
+        combatMinSamples = combatMinSamples.coerceIn(3, 10000)
+        combatWarnCooldownSeconds = combatWarnCooldownSeconds.coerceIn(0, 86400)
+        if (combatJsonlFile.isBlank()) combatJsonlFile = "guard/combat-stats.jsonl"
         xrayStatsRareRatioThreshold = xrayStatsRareRatioThreshold.coerceIn(0.0, 1.0)
         xrayStatsMinMinedSamples = xrayStatsMinMinedSamples.coerceIn(10, 1_000_000)
         xrayStatsExposureThreshold = xrayStatsExposureThreshold.coerceIn(0.0, 6.0)

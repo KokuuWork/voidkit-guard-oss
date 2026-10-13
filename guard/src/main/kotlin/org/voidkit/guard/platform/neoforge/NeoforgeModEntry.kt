@@ -42,7 +42,11 @@ class NeoforgeModEntry(bus: IEventBus, container: ModContainer) {
         // 2. 模块 + 生命周期（加载器无关装配；通道实现由本入口注入）
         GuardBootstrap.bootstrap(NeoforgeChannel())
 
-        // 3. 网络载荷（NeoForge 专属 API）
+        // 3. 服务端游戏事件桥接（方块破坏 → X 射线；攻击 → 战斗遥测；tick → 视角采样）。
+        //    放在入口而不是 Bootstrap：这是加载器 API，Bootstrap 保持零加载器 import。
+        NeoforgeServerEvents.register()
+
+        // 4. 网络载荷（NeoForge 专属 API）
         bus.addListener { event: RegisterPayloadHandlersEvent ->
             event.registrar(GuardBootstrap.MODID).optional().versioned("1")
                 .playBidirectional(GuardWirePayload.TYPE, GuardWirePayload.STREAM_CODEC) { payload, ctx ->
@@ -63,7 +67,7 @@ class NeoforgeModEntry(bus: IEventBus, container: ModContainer) {
                 }
         }
 
-        // 4. 客户端侧无额外动作
+        // 5. 客户端侧无额外动作
         if (FMLEnvironment.dist.isClient) {
             GuardBootstrap.LOG.debug("VoidkitGuard 客户端 Agent 就绪")
         }

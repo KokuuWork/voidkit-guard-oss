@@ -57,6 +57,7 @@ class GuardHub {
     lateinit var screenshots: ScreenshotFeature
     lateinit var deep: DeepScanFeature
     lateinit var xrayStats: XrayStatisticsFeature
+    lateinit var combat: CombatFeature
 
     @Volatile
     var started: Boolean = false

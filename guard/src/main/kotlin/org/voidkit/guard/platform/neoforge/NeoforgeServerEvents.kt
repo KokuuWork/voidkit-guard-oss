@@ -4,18 +4,22 @@ import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.server.level.ServerPlayer
 import net.neoforged.neoforge.common.NeoForge
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent
 import net.neoforged.neoforge.event.level.BlockEvent
+import net.neoforged.neoforge.event.tick.ServerTickEvent
 import org.voidkit.guard.GuardBootstrap
+import kotlin.math.sqrt
 
 /**
  * 服务端游戏事件桥接（NeoForge 全局事件总线 → guard 业务模块）。
  *
  * 与 [NeoforgePayloads]/[NeoforgeServer] 同属「唯一按加载器重写」的一层：
- * `BlockEvent.BreakEvent` 是 NeoForge API，业务代码不 import 它 ——
- * 这里翻译成 `blockId 字符串 + 暴露空气面数` 再递给 X 射线统计检测，
+ * `BlockEvent` / `LivingAttackEvent` / `ServerTickEvent` 都是 NeoForge API，
+ * 业务代码不 import 它们 —— 这里翻译成「方块 id + 暴露面数」「攻击距离 +
+ * 视角角速度」「每 tick 视角」再递给 X 射线统计检测与战斗遥测，
  * 换加载器时只需照抄这一个文件，业务代码零改动。
  *
- * 为什么用加载器事件而不是 mixin：挖掘行为在服务端有原生事件出口，
+ * 为什么用加载器事件而不是 mixin：挖掘/攻击在服务端都有原生事件出口，
  * 零 mixin 即可拿到（方块、玩家、世界都能直接读）—— mixin 是给
  * 「没有事件出口的内部行为」留的最后手段，能用事件就不用 mixin。
  */
@@ -29,6 +33,7 @@ object NeoforgeServerEvents {
         if (registered) return
         registered = true
 
+        // ---- 方块破坏 → X 射线统计检测 ----
         NeoForge.EVENT_BUS.addListener { e: BlockEvent.BreakEvent ->
             val h = GuardBootstrap.hub ?: return@addListener
             val sp = e.player as? ServerPlayer ?: return@addListener
@@ -48,6 +53,45 @@ object NeoforgeServerEvents {
             val player = NeoforgePlayer(sp)
             // BreakEvent 本就在主线程，execute 幂等；统一过 execute 保持与网络消息同一条线程纪律
             h.server.execute { h.xrayStats.onBlockBreak(player, blockId, exposed) }
+        }
+
+        // ---- 近战攻击 → 战斗遥测（reach + 急转） ----
+        // 注意用 directEntity 而不是 entity：弓箭/药水由玩家射出，entity 是玩家但
+        // directEntity 是箭 —— 那种「伤害」测 reach 没有意义（飞行道具本来就远程）。
+        NeoForge.EVENT_BUS.addListener { e: LivingIncomingDamageEvent ->
+            val h = GuardBootstrap.hub ?: return@addListener
+            if (!h.config.combatEnabled) return@addListener
+            val attacker = e.source.directEntity as? ServerPlayer ?: return@addListener
+            // 创造/旁观在桥接层滤掉：那俩模式 5 格互动范围合法，会污染 reach 读数
+            if (attacker.isCreative || attacker.isSpectator) return@addListener
+
+            val eye = attacker.eyePosition
+            val box = e.entity.boundingBox
+            // 眼睛到目标碰撞箱**最近点**的距离（比中心距准：打大目标边缘时中心距虚高）
+            val cx = eye.x.coerceIn(box.minX, box.maxX)
+            val cy = eye.y.coerceIn(box.minY, box.maxY)
+            val cz = eye.z.coerceIn(box.minZ, box.maxZ)
+            val dx = eye.x - cx
+            val dy = eye.y - cy
+            val dz = eye.z - cz
+            val dist = sqrt(dx * dx + dy * dy + dz * dz)
+
+            val player = NeoforgePlayer(attacker)
+            val snap = h.combat.snapOf(attacker.stringUUID)
+            // LivingAttackEvent 在主线程；execute 幂等，统一线程纪律
+            h.server.execute { h.combat.onAttack(player, dist, snap) }
+        }
+
+        // ---- 每 tick 视角采样 → 战斗遥测的「攻击所在 tick 角速度」 ----
+        // 代价：O(在线玩家) 两次浮点读 + 一次 map 查，50 人局约 150 操作/tick，可忽略。
+        NeoForge.EVENT_BUS.addListener { e: ServerTickEvent.Post ->
+            val h = GuardBootstrap.hub ?: return@addListener
+            if (!h.config.combatEnabled) return@addListener
+            val players = e.server.playerList.players ?: return@addListener
+            for (sp in players) {
+                if (sp.isCreative || sp.isSpectator) continue
+                h.combat.onRotate(sp.stringUUID, sp.yRot, sp.xRot)
+            }
         }
     }
 }

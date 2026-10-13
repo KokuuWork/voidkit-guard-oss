@@ -11,9 +11,9 @@ import org.voidkit.core.platform.Platforms
 import org.voidkit.core.util.ConfigFiles
 import org.voidkit.guard.platform.GChannel
 import org.voidkit.guard.platform.neoforge.NeoforgeServer
-import org.voidkit.guard.platform.neoforge.NeoforgeServerEvents
 import org.voidkit.guard.server.AuditFeature
 import org.voidkit.guard.server.BanFeature
+import org.voidkit.guard.server.CombatFeature
 import org.voidkit.guard.server.DeepScanFeature
 import org.voidkit.guard.server.GuardDb
 import org.voidkit.guard.server.GuardHub
@@ -43,6 +43,7 @@ import org.voidkit.guard.server.XrayStatisticsFeature
  *   `Platforms.current.gameDir()`，事件挂载走 core 的 PluginRegistry。
  * - 换加载器 = 新写一个入口文件 + 一个 `XxxMods` 实现，本文件零改动。
  * - 事件监听全部走 core 的 VEvent 回调（onPlayerJoin/onPlayerQuit），业务代码零 `net.neoforged` import。
+ * - 服务端游戏事件桥接（方块破坏/攻击/tick 采样）由加载器入口注册，也不在本文件。
  */
 object GuardBootstrap {
 
@@ -56,6 +57,7 @@ object GuardBootstrap {
     val audit = AuditFeature()
     val deep = DeepScanFeature()
     val xrayStats = XrayStatisticsFeature()
+    val combat = CombatFeature()
 
     /** 服务端共享上下文；null = 尚未装配（构造期/已关服）。 */
     @Volatile
@@ -84,9 +86,7 @@ object GuardBootstrap {
         PluginRegistry.register(audit, MODID)
         PluginRegistry.register(deep, MODID)
         PluginRegistry.register(xrayStats, MODID)
-
-        // 服务端游戏事件桥接（方块破坏 → X 射线统计检测；纯内存注册）
-        NeoforgeServerEvents.register()
+        PluginRegistry.register(combat, MODID)
 
         // 关服收尾走 core 的平台无关生命周期抽象（不直接抱 NeoForge 事件总线）
         Platforms.current.registerLifecycle(GuardLifecycle)
@@ -97,7 +97,7 @@ object GuardBootstrap {
      *
      * 时机：[org.voidkit.core.api.Feature.onServerAboutToStart] ——
      * 内核此时已完成 ConfigFiles.init / VoidkitServer.attach，
-     * 且还没通知任何模块，所以五个模块无论谁先拿到 hub 都是全的。
+     * 且还没通知任何模块，所以七个模块无论谁先拿到 hub 都是全的。
      */
     fun assembleHub(server: MinecraftServer): GuardHub {
         hub?.let { return it }
@@ -112,6 +112,7 @@ object GuardBootstrap {
         g.bans = bans.also { it.hub = g }
         g.screenshots = screenshots.also { it.hub = g }
         g.deep = deep.also { it.hub = g }
+        g.combat = combat.also { it.hub = g }
         g.xrayStats = xrayStats.also { it.hub = g }
         audit.hub = g
         integrity.hub = g
