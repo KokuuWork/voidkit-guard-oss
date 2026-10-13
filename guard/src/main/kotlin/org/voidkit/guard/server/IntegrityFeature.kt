@@ -350,6 +350,77 @@ class IntegrityFeature : GuardFeature() {
                 },
             )
         }
+
+        // ---------- 白名单管理 API（面板「白名单」页的服务端部分）----------
+        //
+        // 为什么单独开这三个端点，而不是让面板复用 /api/guard/status 里那对 total/pending：
+        // 面板需要一个「可读 + 可写」的独立资源。列表要把每条 mod 的完整指纹给前端渲染，
+        // 批准/移除则是写操作，得能单独做参数校验与审计。命令行的 /guard whitelist 也是
+        // 同一套底层方法，所以这里只是把已有能力暴露成 HTTP，不新增任何业务逻辑。
+        //
+        // 注意：approve/remove/approveAll 内部都已调用 save() 落盘 whitelist.json，
+        // 本层**不要再 save**，否则同一份数据会写两遍。
+
+        /** 列出全部白名单条目。待审在前、组内按 modId 字典序，方便面板把「待处理」顶到最上面。 */
+        router.get("/api/guard/whitelist") { _ ->
+            val cfg = hub.config
+            // 排序只影响展示顺序，不改动 store 里的实际顺序（entries 仍是 private set）。
+            val sorted = hub.whitelist.entries.sortedWith(
+                compareBy({ it.approved }, { it.modId.lowercase() })
+            )
+            ApiJson.obj(
+                "ok", true,
+                // 面板要据此决定显不显示「审核模式」开关的提示，顺带把当前模式带出去。
+                "mode", cfg.integrityMode,
+                "requireReview", cfg.hashlockRequireReview,
+                "total", hub.whitelist.entries.size,
+                "pending", hub.whitelist.pendingCount(),
+                "entries", sorted.map { e ->
+                    ApiJson.obj(
+                        "modId", e.modId,
+                        "version", e.version,
+                        "sha256", e.sha256,
+                        "note", e.note,
+                        "approved", e.approved,
+                        "addedAt", e.addedAt,
+                    )
+                },
+            )
+        }
+
+        /**
+         * 批准白名单条目：`{ "modId": "create" }` 批单个（该 modId 的全部版本），
+         * 或 `{ "all": true }` 一键全批。
+         *
+         * 两个参数都缺（或给了个既不是 all、又没 modId 的空体）就当参数错 —— 宁可让面板报错，
+         * 也不要「缺参数 = 全批」这种默认，那等于把最危险的操作设成最容易误触的。
+         */
+        router.post("/api/guard/whitelist/approve") { req ->
+            val json = req.bodyJson()
+            val modId = json.get("modId")?.asString?.takeIf { it.isNotBlank() }
+            val all = json.get("all")?.asBoolean == true
+            val n = when {
+                all -> hub.whitelist.approveAll()
+                modId != null -> hub.whitelist.approve(modId)
+                else -> return@post ApiJson.error("bad_request", "缺少 modId 或 all")
+            }
+            // 只在真的改了东西时记审计：批 0 条不算一次有效操作，免得审计里全是噪声。
+            if (n > 0) hub.audit("whitelist_approve", actor = "panel")
+            ApiJson.obj("ok", true, "approved", n)
+        }
+
+        /**
+         * 从白名单移除某个 modId 的**全部版本**（与 /guard whitelist remove 同语义）——
+         * 「删一个版本」在运维里几乎没有意义：换了版本就得整条重学，留着旧版本只会误导。
+         */
+        router.post("/api/guard/whitelist/remove") { req ->
+            val json = req.bodyJson()
+            val modId = json.get("modId")?.asString?.takeIf { it.isNotBlank() }
+                ?: return@post ApiJson.error("bad_request", "缺少 modId")
+            val n = hub.whitelist.remove(modId)
+            if (n > 0) hub.audit("whitelist_remove", actor = "panel")
+            ApiJson.obj("ok", true, "removed", n)
+        }
     }
 
     /** 配置快照（面板「模块」页显示，web 插件不需要 import 本插件）。 */
