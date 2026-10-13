@@ -285,6 +285,12 @@ class GuardSessions(private val hub: GuardHub) {
         /** 下次中途复检的时间戳（0 = 未排期）。复检 = 换新 nonce 重新走一遍完整握手。 */
         var nextRechallengeAt: Long = 0L
 
+        /** 已下发过的蜜罐消息 id。真 agent 永远不应答 —— 对任何一条回包都是篡改实锤。 */
+        val honeypotIssued = HashSet<String>()
+
+        /** 下次蜜罐下发时间戳（0 = 未排期；VERIFIED 后首次 onSecond 惰性排期）。 */
+        var honeypotAt: Long = 0L
+
         fun wipe() {
             keyBox?.wipe()
             keyBox = null
@@ -365,7 +371,21 @@ class GuardSessions(private val hub: GuardHub) {
                     GuardMsg.DEEP_SCAN_RESULT -> hub.deep.handleResult(s, DeepScanResult.decode(plain))
                 }
             }
-            else -> hub.logWarn("guard: 未知消息 $msgId 来自 ${player.name}")
+            else -> {
+                // 蜜罐命中：对「服务端下发过、真 agent 永远不应答」的诱饵 id 有了回音，
+                // 唯一解释是这端的协议层不是真 agent（剥检测留转发壳 / 山寨实现）。
+                // 按 fail 处置（截图取证 + 踢/封），话术走 stealth 通用文案不露蜜罐存在。
+                if (msgId in s.honeypotIssued) {
+                    fail(s, "客户端校验失败", "honeypot_hit")
+                    return
+                }
+                // 其余未知消息：不处置只审计 —— 可能是将来新增的消息类型跑在旧服务端上
+                hub.logWarn("guard: 未知消息 $msgId 来自 ${player.name}")
+                hub.audit(
+                    "protocol_unknown", actor = player.name, target = player.uuid, ip = player.ip,
+                    detail = mapOf("msgId" to msgId, "bytes" to body.size),
+                )
+            }
         }
     }
 
@@ -579,6 +599,15 @@ class GuardSessions(private val hub: GuardHub) {
             }
             if (s.state != State.VERIFIED) continue
 
+            // 蜜罐协议：到点就给这个会话发一条「真 agent 不认识的诱饵消息」。
+            // 惰性排期：验证通过后的第一次 onSecond 才定第一次下发时间。
+            if (cfg.honeypotEnabled && cfg.honeypotIds.isNotEmpty() && s.honeypotAt == 0L) {
+                s.honeypotAt = now + nextHoneypotDelayMs(cfg)
+            }
+            if (cfg.honeypotEnabled && s.honeypotAt in 1..now) {
+                sendHoneypot(s, cfg)
+            }
+
             if (cfg.keepaliveEnabled) {
                 val due = s.lastKeepaliveSent == 0L ||
                     now - s.lastKeepaliveSent >= cfg.keepaliveIntervalSeconds * 1000L
@@ -626,6 +655,39 @@ class GuardSessions(private val hub: GuardHub) {
         s.lastKeepaliveSent = ts
         hub.channel.send(s.player, GuardMsg.KEEPALIVE, body)
     }
+
+    // ---------- 蜜罐协议 ----------
+
+    /**
+     * 给会话发一条蜜罐消息。
+     *
+     * 载荷要**像模像样**：一个带版本号和条目数的假「同步数据」，让逆向者
+     * 觉得值得为它写响应逻辑。真 agent 的消息分发对未知 id 静默丢弃，
+     * 唯一会回包的是「按 id 实现了全量应答」的协议壳 —— 那正是要钓的鱼。
+     */
+    private fun sendHoneypot(s: Session, cfg: GuardConfig) {
+        val box = s.keyBox ?: return
+        val id = cfg.honeypotIds.filter { it !in s.honeypotIssued }
+            .randomOrNull() ?: return // 池子发完了：一个会话一个周期不重复，重进服再换
+        // 假载荷：rev + count + 若干条目 —— 形状模仿真实同步协议，够诱人即可
+        val bait = ByteWriter().apply {
+            i32(1)                              // rev
+            i32(3)                              // 条目数
+            str("placeholder-a"); str("placeholder-b"); str("placeholder-c")
+        }.toByteArray()
+        val sealed = box.use { k -> GCrypto.seal(k, aad(id), bait) } ?: return
+        hub.channel.send(s.player, id, sealed)
+        s.honeypotIssued.add(id)
+        s.honeypotAt = System.currentTimeMillis() + nextHoneypotDelayMs(cfg)
+        hub.audit(
+            "honeypot_sent", actor = "system", target = s.player.name, ip = s.player.ip,
+            detail = mapOf("baitId" to id),
+        )
+    }
+
+    /** 下次蜜罐下发延时（毫秒），[min, max] 随机 —— 固定间隔会被逆向者摸出规律。 */
+    private fun nextHoneypotDelayMs(cfg: GuardConfig): Long =
+        (cfg.honeypotMinSeconds..cfg.honeypotMaxSeconds).random() * 1000L
 
     // ---------- 会话加密封装 ----------
 

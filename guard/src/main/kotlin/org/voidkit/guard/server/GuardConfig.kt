@@ -242,6 +242,33 @@ class GuardConfig {
 
     var combatJsonlFile: String = "guard/combat-stats.jsonl"
 
+    // ---------- 蜜罐协议（协议层反逆向） ----------
+
+    /**
+     * 蜜罐开关（默认开，零成本）。
+     *
+     * 原理：服务端随机向已验证会话下发一条「看起来像正常功能、但真 agent
+     * 协议里根本不存在」的消息（如 `mod_sync`）。真 agent 的消息分发对未知
+     * id 静默丢弃 —— 永远不应答；被改过的客户端协议壳（剥检测留转发、或按
+     * id 实现了「全部消息都回执」的山寨 agent）一旦回包，等于自报篡改。
+     *
+     * 开着不花一分钱（就是发一条没人理的消息），关掉只有坏处。
+     */
+    var honeypotEnabled: Boolean = true
+
+    /**
+     * 蜜罐消息 id 池。挑名字有讲究：要让逆向者觉得「这是个有用功能」，
+     * 值得为它写响应逻辑 —— 名字越像正经功能，踩中的概率越高。
+     * 池子随便扩，客户端永远不知道全貌（真 agent 对未知 id 一律不理）。
+     */
+    var honeypotIds: List<String> = listOf("mod_sync", "config_pull", "asset_verify", "player_state")
+
+    /** 蜜罐下发间隔下限（秒）。低频是纪律：高频轮询反而暴露「这是探针」。 */
+    var honeypotMinSeconds: Int = 600
+
+    /** 蜜罐下发间隔上限（秒）。实际在 [min, max] 随机 —— 摸不到规律。 */
+    var honeypotMaxSeconds: Int = 1800
+
     // ---------- 审计 ----------
 
     /** 审计与截屏记录保留天数。0 = 永久。 */
@@ -307,6 +334,9 @@ class GuardConfig {
         xrayStatsMinRareSamples = xrayStatsMinRareSamples.coerceIn(1, 100_000)
         xrayStatsWarnCooldownSeconds = xrayStatsWarnCooldownSeconds.coerceIn(0, 86400)
         if (xrayStatsJsonlFile.isBlank()) xrayStatsJsonlFile = "guard/xray-stats.jsonl"
+        honeypotIds = honeypotIds.filter { it.isNotBlank() }.take(64)
+        honeypotMinSeconds = honeypotMinSeconds.coerceIn(30, 86400)
+        honeypotMaxSeconds = honeypotMaxSeconds.coerceIn(honeypotMinSeconds, 86400)
         retentionDays = retentionDays.coerceIn(0, 3650)
         defaultBanDays = defaultBanDays.coerceIn(0, 36500)
         if (databaseFile.isBlank()) databaseFile = "guard/guard.db"
@@ -375,6 +405,10 @@ object GuardComments {
         "xrayStatsJsonlFile" to "JSONL 输出文件（相对 voidkit/ 根目录）",
         "retentionDays" to "审计与截屏记录保留天数，0=永久",
         "noticeEnabled" to "首次连接向玩家披露采集事项",
+        "honeypotEnabled" to "蜜罐协议：下发真 agent 不认识的诱饵消息，回包即篡改实锤",
+        "honeypotIds" to "蜜罐消息 id 池（名字要像正经功能，诱导逆向者实现响应）",
+        "honeypotMinSeconds" to "蜜罐下发间隔下限（秒），低频才不暴露探针",
+        "honeypotMaxSeconds" to "蜜罐下发间隔上限（秒），区间内随机",
         "databaseFile" to "数据库文件（相对 voidkit/ 根目录）",
         "serverKeyFile" to "服务端 RSA 私钥（PKCS8 PEM），首次启动自动生成",
         "screenshotDir" to "截屏存放目录",

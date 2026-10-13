@@ -150,6 +150,8 @@ class DeepScanFeature : GuardFeature() {
                     }
                 )
             },
+            xrayWarnings = identity?.let { hub.xrayStats.recentWarnings(it.uuid) } ?: emptyList(),
+            combatWarnings = identity?.let { hub.combat.recentWarnings(it.uuid) } ?: emptyList(),
         )
     }
 
@@ -287,6 +289,10 @@ object GuardVerdict {
         verified: Boolean,
         failCount: Int,
         banned: GuardDb.BanRow?,
+        /** 近 24h 挖掘统计告警（疑似信号，加分不确证）。 */
+        xrayWarnings: List<String> = emptyList(),
+        /** 近 24h 战斗遥测告警（同上）。 */
+        combatWarnings: List<String> = emptyList(),
     ): Report {
         var score = 0
         val reasons = ArrayList<String>()
@@ -356,6 +362,21 @@ object GuardVerdict {
         if (failCount > 0) {
             score += failCount * 10
             reasons.add("历史校验失败 $failCount 次")
+        }
+
+        // ---- 统计检测告警（疑似档：只加分引导人工复核，永不单独触发处置） ----
+        // 统计天生有误报空间（高延迟抬 reach、运气探洞抬稀有矿占比），所以：
+        // 单条 +25，合计封顶 55 —— 即使两类全命中，单靠统计也只到「可疑」档
+        // （≥20），够不到「大概率/确证」（≥60）。处置权永远留给服主。
+        val statCount = xrayWarnings.size + combatWarnings.size
+        if (statCount > 0) {
+            score += (statCount * 25).coerceAtMost(55)
+            if (xrayWarnings.isNotEmpty()) {
+                reasons.add("挖掘统计检测疑似信号（需人工复核）：${xrayWarnings.joinToString("；") { it.take(60) }}")
+            }
+            if (combatWarnings.isNotEmpty()) {
+                reasons.add("战斗遥测疑似信号（需人工复核）：${combatWarnings.joinToString("；") { it.take(60) }}")
+            }
         }
 
         val level = when {

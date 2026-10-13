@@ -57,7 +57,12 @@ class CombatFeature : GuardFeature() {
         var snapDeg: Double = 0.0
         val attacks = ArrayDeque<AttackSample>()
         val lastWarnAt = HashMap<String, Long>()
+        /** 告警历史（供综合判定报告引用，保留最近 20 条）。 */
+        val warnings = ArrayDeque<WarnRecord>()
     }
+
+    /** 一条告警记录（报告用，带时间戳）。 */
+    class WarnRecord(val at: Long, val reason: String, val metric: String)
 
     private val stats = ConcurrentHashMap<String, PlayerCombat>()
 
@@ -170,7 +175,22 @@ class CombatFeature : GuardFeature() {
         hub.logWarn(
             "战斗遥测：${player.name} 疑似战斗类作弊（$reason）｜$metric｜$threshold｜窗口 ${cfg.combatWindowMinutes} 分钟 ${s.attacks.size} 次攻击"
         )
+        s.warnings.addLast(WarnRecord(now, reason, metric))
+        while (s.warnings.size > 20) s.warnings.removeFirst()
         if (cfg.combatJsonlEnabled) appendJsonl(player, reason, metric, s)
+    }
+
+    /**
+     * 玩家近 24 小时的战斗遥测告警（综合判定报告的数据源）。
+     *
+     * 同 X 射线的语义：**疑似**信号，报告里只做加分项供人工复核，不进确证档。
+     */
+    fun recentWarnings(uuid: String): List<String> {
+        val cutoff = System.currentTimeMillis() - 24 * 3600_000L
+        return stats[uuid]?.warnings
+            ?.filter { it.at >= cutoff }
+            ?.map { "${it.reason}（${it.metric}）" }
+            ?: emptyList()
     }
 
     private fun appendJsonl(player: GPlayer, reason: String, metric: String, s: PlayerCombat) {

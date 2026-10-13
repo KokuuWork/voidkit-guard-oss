@@ -60,7 +60,12 @@ class XrayStatisticsFeature : GuardFeature() {
         val rareDigs = ArrayDeque<RareDig>()
         /** 每个告警原因上次触发时间（防日志刷屏）。 */
         val lastWarnAt = HashMap<String, Long>()
+        /** 告警历史（供综合判定报告引用，保留最近 20 条 / 24 小时内）。 */
+        val warnings = ArrayDeque<WarnRecord>()
     }
+
+    /** 一条告警记录（报告用，带时间戳）。 */
+    class WarnRecord(val at: Long, val reason: String, val metric: String)
 
     private val stats = ConcurrentHashMap<String, PlayerStats>()
 
@@ -139,10 +144,31 @@ class XrayStatisticsFeature : GuardFeature() {
 
         val line = "X 射线统计检测：${player.name} 疑似透视类行为（$reason）｜$metric｜$threshold｜累计 普通矿 ${s.commonOres}/稀有矿 ${s.rareOres}/总 ${s.minedTotal}"
         hub.logWarn(line)
+        recordWarn(s, now, reason, metric)
 
         if (cfg.xrayStatsJsonlEnabled) {
             appendJsonl(player, reason, metric, s)
         }
+    }
+
+    /** 记录告警历史（供综合判定报告引用）。超过 20 条丢最旧的。 */
+    private fun recordWarn(s: PlayerStats, now: Long, reason: String, metric: String) {
+        s.warnings.addLast(WarnRecord(now, reason, metric))
+        while (s.warnings.size > 20) s.warnings.removeFirst()
+    }
+
+    /**
+     * 玩家近 24 小时的统计检测告警（综合判定报告的数据源）。
+     *
+     * 注意语义：这些是**疑似**信号（统计有误报空间），报告里只做加分项，
+     * 不进「确证」档 —— 处置与否由服主看报告人工判断。
+     */
+    fun recentWarnings(uuid: String): List<String> {
+        val cutoff = System.currentTimeMillis() - 24 * 3600_000L
+        return stats[uuid]?.warnings
+            ?.filter { it.at >= cutoff }
+            ?.map { "${it.reason}（${it.metric}）" }
+            ?: emptyList()
     }
 
     /** JSONL 一行一条，追加写。写失败只吞掉（取证是尽力而为，不能影响主流程）。 */
