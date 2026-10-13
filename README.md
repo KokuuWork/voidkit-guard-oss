@@ -1,38 +1,45 @@
 # VoidkitGuard —— 反作弊组件
 
 NeoForge **1.21.1**，Voidkit 套件（`KokuuWork/voidkit`）的第 9 个组件：**客户端 Agent + 服务端校验**。
-客户端与服务端是同一个 jar（`side = BOTH`），只依赖 `voidkit_core`。
+客户端与服务端拆成两个 jar：服务端依赖 `voidkit_core`，客户端**零依赖**。
 
 ```
-guard/build/libs/voidkit_guard-1.0.0.jar   ← 唯一产物，客户端服务端都装它
+server/build/libs/voidkit_guard-1.0.0.jar         ← 服务端（装服务器，依赖 voidkit_core）
+client/build/libs/voidkit_guard_client-1.0.0.jar  ← 客户端（装玩家机器，零依赖）
 ```
+
+拆成两个 jar 的意义：客户端 jar 物理上不含任何服务端代码 —— 反编译客户端
+拿不到服务端的密钥处理、会话管理与检测策略。
 
 ---
 
 ## 1. 架构（为移植而生）
 
 ```
-guard/
-├── common/        协议、加密、内存机密保护（纯 Kotlin，零 MC import）
-├── platform/      抽象接口 GServer/GChannel/GMods + GuardPlatforms 持有者
-│   └── neoforge/  ★ 唯一碰 net.neoforged.* 的一层：适配实现 + @Mod 入口
-├── server/        五个 Feature：完整性 / 封禁 / 截屏 / 审计 / 深度扫描
-├── client/        Agent：握手应答、硬件采集、截屏、深度扫描
-└── GuardBootstrap.kt   加载器无关装配（模块注册 + hub + 生命周期）
+voidkit-guard/
+├── common/                协议、加密、数据模型 + platform 接口（纯 Kotlin，零 MC、零 core import）
+│   ├── common/            协议 Wire/GProtocol、加密 GCrypto/SecretBox、模型 GFingerprint
+│   └── platform/          抽象接口 GServer/GChannel/GMods + GuardPlatforms 持有者
+├── server/                服务端校验端（modId=voidkit_guard，依赖 voidkit_core）
+│   ├── server/            七个 Feature：完整性 / 封禁 / 截屏 / 审计 / 深度扫描 / 挖掘统计 / 战斗遥测
+│   ├── GuardBootstrap.kt  加载器无关装配（模块注册 + hub + 生命周期）
+│   └── platform/neoforge/ 服务端适配 + @Mod 入口
+└── client/                客户端 Agent（modId=voidkit_guard_client，零依赖）
+    ├── client/            Agent：握手应答、硬件采集、截屏、深度扫描
+    └── platform/neoforge/ 客户端适配 + @Mod 入口
 ```
 
-- **插件只依赖 core**，零跨插件 import（套件铁律）。
+- **服务端只依赖 core**，客户端**零依赖**，零跨插件 import（套件铁律）。
+- **common 是共享源码目录**（不是独立 Gradle 项目），两个 jar 各编译一份 ——
+  所以客户端 jar 里只有 `common/` + `client/` + `platform/`，没有服务端代码。
 - **与 core 1.2.0 platform 层对接**（不再自己造轮子）：
-  - 游戏目录 → `Platforms.current.gameDir()`
+  - 游戏目录 → `Platforms.current.gameDir()`（服务端侧）
   - 关服收尾 → `Platforms.current.registerLifecycle(ServerLifecycleListener)`
-  - 事件挂载 → core 的 PluginRegistry（`Feature` 生命周期驱动）
+  - 事件挂载 → core 的 PluginRegistry（`Feature` 生命周期驱动，`onPlayerJoin/onPlayerQuit` 等 VEvent 回调）
 - **guard 自己只抽象 core 没有的**：`GMods`（mod 清单枚举 ——
   NeoForge 用 `ModList`，Fabric 用 `FabricLoader`，反作弊特有需求）。
-- 换加载器 = 新增 `platform/fabric/`（一个入口文件 + 一个 `FabricMods`），
+- 换加载器 = 各加一个 `platform/<loader>/` 入口文件 + 一个 `<Loader>Mods`，
   `common` / `server` / `client` 业务代码零改动。
-- 剩余迁移面（等 core 的 VEvent 桥接落地后一起搬）：`server/` 下
-  BanFeature / IntegrityFeature 里各一处 `@SubscribeEvent` 登录/登出监听
-  （约 20 行，改成覆写 `Feature.onPlayerJoin/onPlayerQuit` 即可）。
 
 ## 2. 七个模块
 
@@ -113,8 +120,9 @@ guard/
 ## 6. 部署
 
 ### 安装
-服务端 `mods/` 放 `voidkit_guard-1.0.0.jar` + `voidkit_core`；玩家客户端同样放这两个 jar。
-没装客户端的玩家能进服，但握不上手 → 按 `integrityOnFail` 踢/封。
+- 服务端 `mods/` 放 `voidkit_guard-1.0.0.jar` + `voidkit_core`。
+- 玩家客户端只放 `voidkit_guard_client-1.0.0.jar`（**不需要** core）。
+- 没装客户端的玩家能进服，但握不上手 → 按 `integrityOnFail` 踢/封。
 
 ### 哈希锁开通流程（「先学习，后锁定」）
 1. `/guard mode hashlock` —— 白名单为空时自动学习已开启。
@@ -142,7 +150,19 @@ whitelist.json    哈希锁白名单
 
 命令：`/guard status|mode|reload|key|whitelist`｜`/gban` `/gunban` `/gbanlist` `/gcheck`｜
 `/gscreen` `/greports`｜`/gscan` `/greport`
-权限节点：`voidkit.guard`（总）／`voidkit.guard.ban`／`voidkit.guard.screen`。
+权限节点（**按破坏性分层**，别一股脑给一个人）：
+
+| 节点 | 覆盖 | 说明 |
+|---|---|---|
+| `voidkit.guard` | `/guard status\|mode\|reload\|fence export`、`/gscan` `/greport`、`/guard whitelist ...` | 日常运维：看状态、切模式、审白名单 |
+| `voidkit.guard.ban` | `/gban` `/gunban` `/gbanlist` `/gcheck` | 封禁与查询 |
+| `voidkit.guard.screen` | `/gscreen` `/greports` | 截屏取证 |
+| `voidkit.guard.key` | `/guard key rotate` `/guard key export` | 🚨 **不可逆**：rotate 会让**所有已发布客户端立刻失效** |
+| `voidkit.guard.fence` | `/guard fence import` | 把别服的封禁清单写进本服 |
+
+- 没装 `voidkit_perm` 时按原版 OP 判定（普通玩家一律拒绝 —— 反作弊没有面向玩家的命令）。
+- 这些节点**刻意不并入 `voidkit.admin`**：反作弊权限敏感，应该单独授予，
+  而不是「给了管理总权限就顺带拿到封禁/密钥轮换」。
 
 API（经 `voidkit_web` 的 ApiRouter 暴露，给管理面板）：
 `GET /api/guard/status`｜`GET /api/guard/sessions`｜`GET/POST /api/guard/bans`｜
@@ -164,15 +184,16 @@ API（经 `voidkit_web` 的 ApiRouter 暴露，给管理面板）：
 ## 9. 开发
 
 ```bash
-./build.sh build       # → guard/build/libs/voidkit_guard-1.0.0.jar
-./build.sh runServer   # 开发服务端（core + guard 一起从 classpath 加载）
+./build.sh build       # → server/build/libs/voidkit_guard-1.0.0.jar + client/build/libs/voidkit_guard_client-1.0.0.jar
+./build.sh runServer   # 开发服务端（core + guard 服务端一起从 classpath 加载）
 ```
 
 - JDK 21（`C:/Users/26703/.jdks/jdk-21.0.12.1+1`），Gradle 8.12.1，Kotlin 2.1.0。
-- 依赖 **voidkit_core 1.2.0**（platform 适配层版本）。组合构建消费本地
+- 依赖 **voidkit_core 1.2.0**（仅服务端，platform 适配层版本）。组合构建消费本地
   `KokuuWork/voidkit` 仓库的 `:core`（`settings.gradle` 的 includeBuild）——
   并入主仓库时删掉 includeBuild、依赖改成 `project(':core')` 即可。
 - 全 Kotlin，注释讲「为什么」；零 mixin；中文注释。
-- ⚠️ 组合构建下 guard 运行时**不要**自己补 `additionalRuntimeClasspath kotlin-stdlib` ——
-  core 的 jarJar 嵌套 kotlin 会上运行时 classpath，两边都是 module-named jar，
-  JPMS 直接 `ResolutionException`（服务端起不来）。kotlin 运行时由 core 提供。
+- 客户端自己 jarJar 一份 `kotlin-stdlib`（服务端由 core 提供）；服务端运行时
+  **不要**再补 `additionalRuntimeClasspath kotlin-stdlib`，否则 core 的 jarJar
+  嵌套 kotlin 与显式依赖撞成两个 `kotlin.stdlib` 模块，JPMS 直接
+  `ResolutionException`（服务端起不来）。

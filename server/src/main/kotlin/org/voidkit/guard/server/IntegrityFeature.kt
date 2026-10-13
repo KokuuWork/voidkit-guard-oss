@@ -26,6 +26,17 @@ import org.voidkit.guard.platform.neoforge.NeoforgePlayer
  */
 class IntegrityFeature : GuardFeature() {
 
+    companion object {
+        /** 日常运维：状态 / mode / reload / 白名单 / 前缀查看。 */
+        const val NODE = "voidkit.guard"
+
+        /** 密钥操作（key rotate / export）——**不可逆**，会让所有已发布客户端失效。 */
+        const val NODE_KEY = "voidkit.guard.key"
+
+        /** 导入联防封禁清单（会往本服写入别服的封禁）。 */
+        const val NODE_FENCE = "voidkit.guard.fence"
+    }
+
     override val id = "guard_integrity"
     override val displayName = "客户端完整性校验"
     override val description = "智能识别 / 哈希锁双模式：进服握手 + 会话保活，防改客户端、防透视模组"
@@ -97,7 +108,7 @@ class IntegrityFeature : GuardFeature() {
 
         dispatcher.register(
             Commands.literal("guard")
-                .requires { VoidkitServices.permission().has(it, "voidkit.guard") }
+                .requires { VoidkitServices.permission().has(it, NODE) }
                 .executes { statusCmd(it.source) }
                 .then(Commands.literal("status").executes { statusCmd(it.source) })
                 .then(
@@ -116,10 +127,17 @@ class IntegrityFeature : GuardFeature() {
                 .then(
                     Commands.literal("fence")
                         .then(Commands.literal("export").executes { fenceExport(it.source) })
-                        .then(Commands.literal("import").executes { fenceImport(it.source) })
+                        .then(
+                            Commands.literal("import")
+                                .requires { VoidkitServices.permission().has(it, NODE_FENCE) }
+                                .executes { fenceImport(it.source) }
+                        )
                 )
                 .then(
                     Commands.literal("key")
+                        // 🚨 key 是「不可逆的全局操作」：rotate 一执行，所有已发布客户端立刻全部失效
+                        //    （见 README 的密钥轮换流程）。与 status / reload 这类日常运维不该同级。
+                        .requires { VoidkitServices.permission().has(it, NODE_KEY) }
                         .then(Commands.literal("rotate").executes { keyRotate(it.source) })
                         .then(Commands.literal("export").executes { keyExport(it.source) })
                 )
