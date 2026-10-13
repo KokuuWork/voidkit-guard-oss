@@ -8,8 +8,12 @@ plugins {
 // ==============================================================
 ext {
     // 全部 release 均为测试版（pre-release），不建议用于生产环境。
-    // 与 voidkit 套件其余模块保持同一命名规格：<mod>-beta0.1+mc<版本>-<loader>.jar
-    guardVersion = 'beta0.1'
+    // 与 voidkit 套件其余模块保持同一命名规格：<mod>-0.1.0-beta.1+mc<版本>-<loader>.jar。
+    // ⚠️ 版本字面量必须是合法语义化版本：NeoForge/Forge 的 mods.toml 都拒绝
+    // 'beta0.1' 这类非数字开头形式（InvalidModFileException: Illegal version
+    // number，整个 jar 被跳过不加载，已实测复现）。人类命名 beta0.1 只出现在
+    // release title / notes，不进版本号。
+    guardVersion = '0.1.0-beta.1'
     guardGroup = 'org.voidkit'
     guardAuthors = 'Kokuu Studio'
     guardLicense = 'MIT'
