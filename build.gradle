@@ -103,20 +103,35 @@ project(':server') {
         // 组合构建把 org.voidkit:core 替换成本地 :core（并入主仓库时用 project(':core')）
         implementation 'org.voidkit:core:1.2.0'
 
-        // SQLite 驱动：jarJar 内置（约 13MB 原生库）
+        // SQLite 驱动：jarJar 内置（约 13MB 原生库）。
+        // 安全：sqlite-jdbc 带 META-INF/versions/9/module-info.class（named module），
+        // 不会 reads 一切，不会触发 split package。
         jarJar(implementation("org.xerial:sqlite-jdbc")) {
             version {
                 strictly '[3.46,)'
                 prefer rootProject.ext.sqliteVersion
             }
         }
-        // ip2region 绑定（纯 Java ~100KB）；11MB xdb 走 resources
-        jarJar(implementation("org.lionsoul:ip2region")) {
-            version {
-                strictly '[2.7,)'
-                prefer rootProject.ext.ip2regionVersion
-            }
-        }
+        // ip2region 绑定（纯 Java ~100KB）；11MB xdb 走 resources。
+        // ⚠️⚠️ **不能 jarJar**：ip2region 的 jar 既无 module-info.class，manifest 里
+        // 也没有 Automatic-Module-Name —— 作为 unstable automatic module，JPMS 规范
+        // 强制它 reads **所有** 模块。双 jar 架构下服务端/客户端 jar 都含
+        // org.voidkit.guard.common 包（common 是共享源码目录），于是撞 split package：
+        //   ResolutionException: Modules voidkit_guard and voidkit_guard_client
+        //   export package org.voidkit.guard.common to module ip2region
+        // 服务端直接起不来（1.20.1 E2E 实测复现；NeoForge 21.1 的 JarJar 同样把
+        // 嵌套 jar 提为 module，同样会中招）。sqlite/kotlin-stdlib 都带 module-info
+        // （named module）所以没这个问题。
+        // 纯 Java 库、无原生库、无 SPI（无 META-INF/services）→ 直接 shade 进类空间，
+        // 不产生嵌套 jar module，最稳。
+        implementation "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}"
+    }
+
+    // 独立 configuration 只用于 shade：拿 ip2region 的 jar 文件本身，
+    // 不掺进 implementation/runtimeClasspath 的依赖解析。
+    def ip2regionShade = configurations.create('ip2regionShade')
+    dependencies {
+        add('ip2regionShade', "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}")
     }
 
     // ⚠️ 开发运行时从 classes 目录加载，jarJar 的嵌套 jar 不生效 —— SQLite/ip2region
@@ -144,6 +159,13 @@ project(':server') {
     jar {
         // 产物命名规格与套件对齐：<mod>-<version>+mc<mc>-<loader>.jar
         archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
+        // ip2region shade：把 org/lionsoul/** 的类并进本 jar 的类空间（不 jarJar，见上）。
+        // 只取类，META-INF（MANIFEST/maven 元数据）不要 —— 避免与外层 manifest 冲突。
+        from provider {
+            ip2regionShade.files.collect { zipTree(it) }
+        } eachFile { details ->
+            if (details.path.startsWith('META-INF/')) details.exclude()
+        }
         manifest {
             attributes([
                     'Specification-Title'   : modId,
