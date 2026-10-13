@@ -1,0 +1,22 @@
+# 构建产物 / 运行目录
+build/
+.gradle/
+.kotlin/
+run/
+boot.log
+
+# 数据库与运行时数据（含指纹/截屏，绝不进库）
+*.db
+*.db-shm
+*.db-wal
+*.pem
+*.pub.b64
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

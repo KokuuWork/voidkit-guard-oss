@@ -1,0 +1,139 @@
+plugins {
+    id 'net.neoforged.moddev' version '2.0.148' apply false
+    id 'org.jetbrains.kotlin.jvm' version '2.1.0' apply false
+}
+
+// ==============================================================
+// 公共版本。与 voidkit 主仓库保持一致，方便将来并入套件时无冲突合并。
+// ==============================================================
+ext {
+    guardVersion = '1.0.0'
+    guardGroup = 'org.voidkit'
+    guardAuthors = 'Kokuu Studio'
+    guardLicense = 'MIT'
+
+    mcVersion = '1.21.1'
+    // ⚠️ 声明要宽松：同 21.1.x 系列内部二进制兼容，只锁主次版本。
+    neoVersion = '21.1.209'
+    neoRange = '[21.1.0,21.2.0)'
+    mcRange = '[1.21.1,1.22)'
+    loaderRange = '[4,)'
+
+    kotlinVersion = '2.1.0'
+
+    // 封禁/审计/截屏记录用嵌入式 SQLite（与查熊同款：零配置、单文件、WAL）。
+    sqliteVersion = '3.53.4.0'
+
+    // IP 归属地离线库（ip2region，纯本地查询不联网）。绑定与 xdb 数据文件的
+    // 版本要配对：数据是 v4 格式（data/ip2region_v4.xdb），绑定时新版本。
+    ip2regionVersion = '2.7.0'
+}
+
+subprojects { p ->
+    apply plugin: 'java'
+    apply plugin: 'net.neoforged.moddev'
+    apply plugin: 'org.jetbrains.kotlin.jvm'
+
+    group = rootProject.ext.guardGroup
+    version = rootProject.ext.guardVersion
+
+    def modId = "voidkit_${p.name}"
+    ext.modId = modId
+
+    base { archivesName = modId }
+
+    java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+    kotlin { jvmToolchain(21) }
+
+    repositories {
+        maven { url = 'https://neoforged.forgecdn.net/releases' }
+        maven { url = 'https://maven.aliyun.com/repository/public' }
+        maven { url = 'https://maven.aliyun.com/repository/central' }
+        mavenCentral()
+    }
+
+    neoForge {
+        version = rootProject.ext.neoVersion
+        mods {
+            "${modId}" {
+                sourceSet(sourceSets.main)
+            }
+        }
+    }
+
+    dependencies {
+        implementation "org.jetbrains.kotlin:kotlin-stdlib:${rootProject.ext.kotlinVersion}"
+        // guard 是「内核 + 一个组件」结构：Kotlin 运行时由 core jarJar 提供，
+        // 这里不重复塞 1.7MB stdlib（和套件里其余插件同一条纪律）。
+        // 只有 SQLite 需要 jarJar —— 整份驱动带原生库，约 13MB。
+        if (p.name == 'guard') {
+            jarJar(implementation("org.xerial:sqlite-jdbc")) {
+                version {
+                    // 只锁下界，让 FML 去仲裁整合包里可能已有的版本（与套件铁律一致）
+                    strictly '[3.46,)'
+                    prefer rootProject.ext.sqliteVersion
+                }
+            }
+            // ip2region 绑定是纯 Java 小 jar（~100KB），只内嵌绑定本身；
+            // 11MB 的 xdb 数据走 resources，首次查询时解到数据目录。
+            jarJar(implementation("org.lionsoul:ip2region")) {
+                version {
+                    strictly '[2.7,)'
+                    prefer rootProject.ext.ip2regionVersion
+                }
+            }
+        }
+    }
+
+    // ⚠️ 开发运行时从 classes 目录加载本模组，jarJar 的嵌套 jar 不生效 ——
+    // SQLite 原生库必须显式补进 run 的 classpath，否则一开库就 NoClassDefFoundError。
+    //
+    // 🚨 kotlin-stdlib **不要**在这里补：组合构建会把 core 的 jar（含 jarJar
+    // 嵌套的 kotlin-stdlib）挂上运行时 classpath，两边都是 module-named jar，
+    // JPMS 直接 ResolutionException（"reads more than one module named
+    // kotlin.stdlib"）—— 服务端起不来。kotlin 运行时由 core 的 jarJar 提供，
+    // 和套件「只有内核打包 Kotlin 运行时」是同一条纪律。
+    afterEvaluate {
+        dependencies {
+            if (p.name == 'guard') {
+                additionalRuntimeClasspath "org.xerial:sqlite-jdbc:${rootProject.ext.sqliteVersion}"
+                additionalRuntimeClasspath "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}"
+            }
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        compilerOptions {
+            freeCompilerArgs.add('-Xjvm-default=all')
+        }
+    }
+
+    processResources {
+        def props = [
+                mod_version : p.version,
+                neo_range   : rootProject.ext.neoRange,
+                mc_range    : rootProject.ext.mcRange,
+                loader_range: rootProject.ext.loaderRange,
+        ]
+        inputs.properties props
+        filesMatching(['META-INF/neoforge.mods.toml']) {
+            expand props
+        }
+    }
+
+    jar {
+        manifest {
+            attributes([
+                    'Specification-Title'   : modId,
+                    'Specification-Vendor'  : rootProject.ext.guardAuthors,
+                    'Specification-Version' : '1',
+                    'Implementation-Title'  : p.name,
+                    'Implementation-Version': p.version,
+                    'Implementation-Vendor' : rootProject.ext.guardAuthors,
+            ])
+        }
+    }
+}

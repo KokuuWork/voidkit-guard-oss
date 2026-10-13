@@ -1,0 +1,39 @@
+modLoader = "javafml"
+loaderVersion = "${loader_range}"
+license = "MIT"
+issueTrackerURL = "https://github.com/KokuuWork/voidkit/issues"
+
+[[mods]]
+modId = "voidkit_guard"
+version = "${mod_version}"
+displayName = "VoidkitGuard"
+authors = "Kokuu Studio"
+description = '''
+Anti-cheat component for the Voidkit suite: a client-side agent plus server-side
+verification. Four modules - client integrity (smart detection or mod hash
+lock), strict bans (IP + machine code + NIC + QQ), on-demand client
+screenshots, and a full audit trail with management API.
+
+Server side requires voidkit_core. Client side is needed on players' machines.
+'''
+
+[[dependencies.voidkit_guard]]
+modId = "neoforge"
+type = "required"
+versionRange = "${neo_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.voidkit_guard]]
+modId = "minecraft"
+type = "required"
+versionRange = "${mc_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.voidkit_guard]]
+modId = "voidkit_core"
+type = "required"
+versionRange = "[${mod_version},)"
+ordering = "AFTER"
+side = "BOTH"
