@@ -1,0 +1,30 @@
+modLoader = "javafml"
+loaderVersion = "${loader_range}"
+license = "MIT"
+issueTrackerURL = "https://github.com/KokuuWork/voidkit/issues"
+
+[[mods]]
+modId = "voidkit_guard_client"
+version = "${mod_version}"
+displayName = "VoidkitGuard Client"
+authors = "Kokuu Studio"
+description = '''
+VoidkitGuard 反作弊组件 —— 客户端 Agent。
+
+配合服务端 voidkit_guard 使用：响应握手校验、采集设备标识、按需截屏取证、
+本机信息扫描。独立轻量 mod，不依赖任何套件基础设施。
+'''
+
+[[dependencies.voidkit_guard_client]]
+modId = "neoforge"
+type = "required"
+versionRange = "${neo_range}"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.voidkit_guard_client]]
+modId = "minecraft"
+type = "required"
+versionRange = "${mc_range}"
+ordering = "NONE"
+side = "BOTH"

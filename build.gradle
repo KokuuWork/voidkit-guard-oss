@@ -4,7 +4,7 @@ plugins {
 }
 
 // ==============================================================
-// 公共版本。与 voidkit 主仓库保持一致，方便将来并入套件时无冲突合并。
+// 公共版本。与 voidkit 主仓库保持一致。
 // ==============================================================
 ext {
     guardVersion = '1.0.0'
@@ -21,26 +21,22 @@ ext {
 
     kotlinVersion = '2.1.0'
 
-    // 封禁/审计/截屏记录用嵌入式 SQLite（与查熊同款：零配置、单文件、WAL）。
+    // 封禁/审计/截屏记录用嵌入式 SQLite（零配置、单文件、WAL）。
     sqliteVersion = '3.53.4.0'
 
-    // IP 归属地离线库（ip2region，纯本地查询不联网）。绑定与 xdb 数据文件的
-    // 版本要配对：数据是 v4 格式（data/ip2region_v4.xdb），绑定时新版本。
+    // IP 归属地离线库（ip2region，纯本地查询不联网）。数据是 v4 格式。
     ip2regionVersion = '2.7.0'
 }
 
+// ==============================================================
+// 所有子项目共用：Java 21 + Kotlin + 仓库 + 编码 + 编译参数
+// ==============================================================
 subprojects { p ->
     apply plugin: 'java'
-    apply plugin: 'net.neoforged.moddev'
     apply plugin: 'org.jetbrains.kotlin.jvm'
 
     group = rootProject.ext.guardGroup
     version = rootProject.ext.guardVersion
-
-    def modId = "voidkit_${p.name}"
-    ext.modId = modId
-
-    base { archivesName = modId }
 
     java.toolchain.languageVersion = JavaLanguageVersion.of(21)
     kotlin { jvmToolchain(21) }
@@ -52,54 +48,8 @@ subprojects { p ->
         mavenCentral()
     }
 
-    neoForge {
-        version = rootProject.ext.neoVersion
-        mods {
-            "${modId}" {
-                sourceSet(sourceSets.main)
-            }
-        }
-    }
-
     dependencies {
         implementation "org.jetbrains.kotlin:kotlin-stdlib:${rootProject.ext.kotlinVersion}"
-        // guard 是「内核 + 一个组件」结构：Kotlin 运行时由 core jarJar 提供，
-        // 这里不重复塞 1.7MB stdlib（和套件里其余插件同一条纪律）。
-        // 只有 SQLite 需要 jarJar —— 整份驱动带原生库，约 13MB。
-        if (p.name == 'guard') {
-            jarJar(implementation("org.xerial:sqlite-jdbc")) {
-                version {
-                    // 只锁下界，让 FML 去仲裁整合包里可能已有的版本（与套件铁律一致）
-                    strictly '[3.46,)'
-                    prefer rootProject.ext.sqliteVersion
-                }
-            }
-            // ip2region 绑定是纯 Java 小 jar（~100KB），只内嵌绑定本身；
-            // 11MB 的 xdb 数据走 resources，首次查询时解到数据目录。
-            jarJar(implementation("org.lionsoul:ip2region")) {
-                version {
-                    strictly '[2.7,)'
-                    prefer rootProject.ext.ip2regionVersion
-                }
-            }
-        }
-    }
-
-    // ⚠️ 开发运行时从 classes 目录加载本模组，jarJar 的嵌套 jar 不生效 ——
-    // SQLite 原生库必须显式补进 run 的 classpath，否则一开库就 NoClassDefFoundError。
-    //
-    // 🚨 kotlin-stdlib **不要**在这里补：组合构建会把 core 的 jar（含 jarJar
-    // 嵌套的 kotlin-stdlib）挂上运行时 classpath，两边都是 module-named jar，
-    // JPMS 直接 ResolutionException（"reads more than one module named
-    // kotlin.stdlib"）—— 服务端起不来。kotlin 运行时由 core 的 jarJar 提供，
-    // 和套件「只有内核打包 Kotlin 运行时」是同一条纪律。
-    afterEvaluate {
-        dependencies {
-            if (p.name == 'guard') {
-                additionalRuntimeClasspath "org.xerial:sqlite-jdbc:${rootProject.ext.sqliteVersion}"
-                additionalRuntimeClasspath "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}"
-            }
-        }
     }
 
     tasks.withType(JavaCompile).configureEach {
@@ -110,18 +60,79 @@ subprojects { p ->
             freeCompilerArgs.add('-Xjvm-default=all')
         }
     }
+}
+
+// ==============================================================
+// server —— 服务端 mod（依赖 core）。
+//
+// 源码 = server/ 自有 + common/ 共享目录（协议/加密/模型/platform 接口）。
+// 客户端不装 core，见下面的 client 块。
+// ==============================================================
+project(':server') {
+    apply plugin: 'net.neoforged.moddev'
+
+    def modId = 'voidkit_guard'
+    base { archivesName = modId }
+
+    // common 是共享源码目录，直接编进本 jar（不是独立 Gradle 项目）
+    sourceSets.main.kotlin.srcDir rootProject.file('common/src/main/kotlin')
+
+    neoForge {
+        version = rootProject.ext.neoVersion
+        mods {
+            "${modId}" {
+                sourceSet(sourceSets.main)
+            }
+        }
+        runs {
+            // 开发服务端：core + guard 都从 classpath 加载，与整合包真实加载路径一致
+            server {
+                server()
+                programArgument '--nogui'
+            }
+        }
+    }
+
+    dependencies {
+        // 组合构建把 org.voidkit:core 替换成本地 :core（并入主仓库时用 project(':core')）
+        implementation 'org.voidkit:core:1.2.0'
+
+        // SQLite 驱动：jarJar 内置（约 13MB 原生库）
+        jarJar(implementation("org.xerial:sqlite-jdbc")) {
+            version {
+                strictly '[3.46,)'
+                prefer rootProject.ext.sqliteVersion
+            }
+        }
+        // ip2region 绑定（纯 Java ~100KB）；11MB xdb 走 resources
+        jarJar(implementation("org.lionsoul:ip2region")) {
+            version {
+                strictly '[2.7,)'
+                prefer rootProject.ext.ip2regionVersion
+            }
+        }
+    }
+
+    // ⚠️ 开发运行时从 classes 目录加载，jarJar 的嵌套 jar 不生效 —— SQLite/ip2region
+    // 原生库必须显式补进 run 的 classpath，否则一用就 NoClassDefFoundError。
+    // 🚨 kotlin-stdlib **不要**在这里补：core 的 jarJar 已提供，两边都是 module-named
+    // jar 会 JPMS ResolutionException（"reads more than one module named kotlin.stdlib"）。
+    afterEvaluate {
+        dependencies {
+            additionalRuntimeClasspath "org.xerial:sqlite-jdbc:${rootProject.ext.sqliteVersion}"
+            additionalRuntimeClasspath "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}"
+        }
+    }
 
     processResources {
         def props = [
-                mod_version : p.version,
+                mod_version : project.version,
                 neo_range   : rootProject.ext.neoRange,
                 mc_range    : rootProject.ext.mcRange,
                 loader_range: rootProject.ext.loaderRange,
         ]
         inputs.properties props
-        filesMatching(['META-INF/neoforge.mods.toml']) {
-            expand props
-        }
+        filesMatching(['META-INF/neoforge.mods.toml']) { expand props }
     }
 
     jar {
@@ -130,8 +141,67 @@ subprojects { p ->
                     'Specification-Title'   : modId,
                     'Specification-Vendor'  : rootProject.ext.guardAuthors,
                     'Specification-Version' : '1',
-                    'Implementation-Title'  : p.name,
-                    'Implementation-Version': p.version,
+                    'Implementation-Title'  : 'server',
+                    'Implementation-Version': project.version,
+                    'Implementation-Vendor' : rootProject.ext.guardAuthors,
+            ])
+        }
+    }
+}
+
+// ==============================================================
+// client —— 客户端 mod（**零 core 依赖**）。
+//
+// 源码 = client/ 自有 + common/ 共享目录。jar 里没有一行服务端代码，
+// 也没有一行 core 引用 —— 反编译客户端拿不到服务端的密钥处理与检测策略。
+// ==============================================================
+project(':client') {
+    apply plugin: 'net.neoforged.moddev'
+
+    def modId = 'voidkit_guard_client'
+    base { archivesName = modId }
+
+    sourceSets.main.kotlin.srcDir rootProject.file('common/src/main/kotlin')
+
+    neoForge {
+        version = rootProject.ext.neoVersion
+        mods {
+            "${modId}" {
+                sourceSet(sourceSets.main)
+            }
+        }
+    }
+
+    dependencies {
+        // ⚠️ 零 core：客户端不装套件基础设施。
+        // 客户端不像服务端有 core 提供 Kotlin 运行时 —— 自己 jarJar 一份。
+        jarJar(implementation("org.jetbrains.kotlin:kotlin-stdlib")) {
+            version {
+                strictly '[2.1,)'
+                prefer rootProject.ext.kotlinVersion
+            }
+        }
+    }
+
+    processResources {
+        def props = [
+                mod_version : project.version,
+                neo_range   : rootProject.ext.neoRange,
+                mc_range    : rootProject.ext.mcRange,
+                loader_range: rootProject.ext.loaderRange,
+        ]
+        inputs.properties props
+        filesMatching(['META-INF/neoforge.mods.toml']) { expand props }
+    }
+
+    jar {
+        manifest {
+            attributes([
+                    'Specification-Title'   : modId,
+                    'Specification-Vendor'  : rootProject.ext.guardAuthors,
+                    'Specification-Version' : '1',
+                    'Implementation-Title'  : 'client',
+                    'Implementation-Version': project.version,
                     'Implementation-Vendor' : rootProject.ext.guardAuthors,
             ])
         }
