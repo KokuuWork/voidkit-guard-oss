@@ -4,7 +4,7 @@ import net.minecraft.client.Minecraft
 
 import org.voidkit.guard.common.GuardMsg
 import org.voidkit.guard.common.GuardWire
-import org.voidkit.guard.GuardBootstrap
+import org.voidkit.guard.GuardClientBootstrap
 import org.voidkit.guard.platform.GuardPlatforms
 import java.io.File
 
@@ -24,7 +24,7 @@ object GuardClient {
                 // （或被中间代理改过）—— 不回应，让它收不到 auth 自己去超时。
                 val signed = org.voidkit.guard.common.SignedChallenge.decode(wire.body)
                 if (!GuardKeys.verify(signed.challenge, signed.signature)) {
-                    GuardBootstrap.LOG.debug("[guard-client] 挑战签名验证失败，已忽略")
+                    GuardClientBootstrap.LOG.debug("[guard-client] 挑战签名验证失败，已忽略")
                     return
                 }
                 ClientAgent.onChallenge(

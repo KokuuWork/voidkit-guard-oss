@@ -7,7 +7,7 @@ import org.voidkit.guard.common.ClientReport
 import org.voidkit.guard.common.DeepScanReq
 import org.voidkit.guard.common.GCrypto
 import org.voidkit.guard.common.GuardMsg
-import org.voidkit.guard.GuardBootstrap
+import org.voidkit.guard.GuardClientBootstrap
 import org.voidkit.guard.common.GuardWire
 import org.voidkit.guard.common.HeapGuard
 import org.voidkit.guard.common.Keepalive
@@ -186,13 +186,13 @@ object ClientAgent {
 
     private fun send(id: String, body: ByteArray) {
         runCatching {
-            GuardBootstrap.channel?.sendToServer(id, body)
+            GuardClientBootstrap.channel?.sendToServer(id, body)
         }.onFailure { log("发送 $id 失败：${it.message}") }
     }
 
     private fun log(msg: String) {
         // 静默原则：只有 debug 级。出问题时服主让玩家开 debug 日志即可排查
-        GuardBootstrap.LOG.debug("[guard-client] {}", msg)
+        GuardClientBootstrap.LOG.debug("[guard-client] {}", msg)
     }
 
     @Suppress("unused")

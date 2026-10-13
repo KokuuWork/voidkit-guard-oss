@@ -9,12 +9,12 @@ version = "${mod_version}"
 displayName = "VoidkitGuard"
 authors = "Kokuu Studio"
 description = '''
-Anti-cheat component for the Voidkit suite: a client-side agent plus server-side
-verification. Four modules - client integrity (smart detection or mod hash
-lock), strict bans (IP + machine code + NIC + QQ), on-demand client
-screenshots, and a full audit trail with management API.
+VoidkitGuard 反作弊组件 —— 服务端校验端。
 
-Server side requires voidkit_core. Client side is needed on players' machines.
+负责客户端完整性校验（智能识别 / 哈希锁）、多身份封禁、截屏接收与取证、
+全量审计、深度扫描与综合判定。客户端 Agent 由 voidkit_guard_client 提供。
+
+依赖 voidkit_core。
 '''
 
 [[dependencies.voidkit_guard]]
@@ -36,4 +36,4 @@ modId = "voidkit_core"
 type = "required"
 versionRange = "[${mod_version},)"
 ordering = "AFTER"
-side = "BOTH"
+side = "SERVER"
