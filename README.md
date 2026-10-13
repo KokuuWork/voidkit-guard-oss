@@ -162,7 +162,19 @@ whitelist.json    哈希锁白名单
 
 命令：`/guard status|mode|reload|key|whitelist`｜`/gban` `/gunban` `/gbanlist` `/gcheck`｜
 `/gscreen` `/greports`｜`/gscan` `/greport`
-权限节点：`voidkit.guard`（总）／`voidkit.guard.ban`／`voidkit.guard.screen`。
+权限节点（**按破坏性分层**，别一股脑给一个人）：
+
+| 节点 | 覆盖 | 说明 |
+|---|---|---|
+| `voidkit.guard` | `/guard status\|mode\|reload\|fence export`、`/gscan` `/greport`、`/guard whitelist ...` | 日常运维：看状态、切模式、审白名单 |
+| `voidkit.guard.ban` | `/gban` `/gunban` `/gbanlist` `/gcheck` | 封禁与查询 |
+| `voidkit.guard.screen` | `/gscreen` `/greports` | 截屏取证 |
+| `voidkit.guard.key` | `/guard key rotate` `/guard key export` | 🚨 **不可逆**：rotate 会让**所有已发布客户端立刻失效** |
+| `voidkit.guard.fence` | `/guard fence import` | 把别服的封禁清单写进本服 |
+
+- 没装 `voidkit_perm` 时按原版 OP 判定（普通玩家一律拒绝 —— 反作弊没有面向玩家的命令）。
+- 这些节点**刻意不并入 `voidkit.admin`**：反作弊权限敏感，应该单独授予，
+  而不是「给了管理总权限就顺带拿到封禁/密钥轮换」。
 
 API（经 `voidkit_web` 的 ApiRouter 暴露，给管理面板）：
 `GET /api/guard/status`｜`GET /api/guard/sessions`｜`GET/POST /api/guard/bans`｜
