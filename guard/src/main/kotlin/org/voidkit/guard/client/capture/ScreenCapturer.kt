@@ -1,66 +1,84 @@
 package org.voidkit.guard.client.capture
 
-import net.minecraft.client.Minecraft
+import java.awt.GraphicsDevice
+import java.awt.GraphicsEnvironment
 import java.awt.Rectangle
 import java.awt.Robot
-import java.awt.GraphicsEnvironment
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
 
 /**
- * 客户端截屏（AWT Robot 方案）。
+ * 客户端截屏（AWT Robot 方案，全屏 + 多显示器）。
+ *
+ * ## 私有版行为：截整张（虚拟）桌面，不是 MC 窗口
+ *
+ * 私有版要的是「取证」而不是「只拍游戏」—— 作弊者常把外挂窗口/网页教程/
+ * 其它可疑软件开在 MC 旁边或副屏上，只截游戏窗口会漏掉这些。所以：
+ * - **单显示器**：截整块屏幕。
+ * - **多显示器**：逐屏截取、按屏幕坐标拼成一张整图（含主屏左侧/上方的
+ *   负坐标副屏）。
+ *
+ * 开源版会把本文件换成「只截 MC 窗口」的窗口版（另一套代码路径），
+ * 两者共用同一套传输/分片/落盘，只有抓取源不同。
  *
  * ## 为什么用 Robot 而不是读 MC 帧缓冲
  *
  * - **零 mixin**：套件铁律（整合包里已有 30+ mixin mod，不插一脚）。
  *   读 framebuffer 要么 mixin 要么调内部渲染状态，Robot 纯 JDK。
- * - **顺带取证**：Robot 抓的是**屏幕区域**而不是游戏画面 ——
- *   覆盖在 MC 窗口上的 overlay（外挂菜单、网页教程）一样进图，
- *   这恰恰是截屏取证想要的效果。
+ * - **顺带取证**：Robot 抓的是**屏幕像素**而不是游戏画面 ——
+ *   覆盖在 MC 窗口上的 overlay（外挂菜单）一样进图，正是取证想要的效果。
  * - **无感**：不闪光、不发声、不改窗口状态，玩家侧零感知。
- *
- * ## 窗口几何
- *
- * 位置用 GLFW `glfwGetWindowPos`（窗口模式的位置；全屏时左上角就是原点），
- * 尺寸用 `Window.getWidth/Height`（帧缓冲尺寸，全屏时=显示器尺寸）。
- * 抓取区域夹到屏幕边界内，防止多显示器/负坐标坐标把 Robot 惹毛。
  */
 object ScreenCapturer {
 
-    /** 抓一张屏，压缩到 maxW/maxH 内，返回 PNG 字节。失败返回 null。 */
+    /** 抓整张桌面（多显示器拼接），压缩到 maxW/maxH 内，返回 PNG 字节。失败返回 null。 */
     fun capture(maxW: Int, maxH: Int): ByteArray? = runCatching {
-        val mc = Minecraft.getInstance()
-        val window = mc.window
-        val handle = window.window
-        if (handle == 0L) return null
+        val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
+        val devices = ge.screenDevices
+        val robot = Robot()
 
-        val px = IntArray(1)
-        val py = IntArray(1)
-        org.lwjgl.glfw.GLFW.glfwGetWindowPos(handle, px, py)
-        val w = window.width
-        val h = window.height
-        if (w <= 0 || h <= 0) return null
+        val full: BufferedImage = if (devices.size <= 1) {
+            robot.createScreenCapture(ge.defaultScreenDevice.defaultConfiguration.bounds)
+        } else {
+            stitch(devices, robot)
+        }
 
-        // 夹到屏幕边界（多显示器/部分跑出屏幕的情况）
-        val screen = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice ?: return null
-        val bounds = screen.defaultConfiguration.bounds
-        var x = px[0]
-        var y = py[0]
-        var cw = w
-        var ch = h
-        if (x < bounds.x) { cw += (x - bounds.x); x = bounds.x }
-        if (y < bounds.y) { ch += (y - bounds.y); y = bounds.y }
-        cw = cw.coerceAtMost(bounds.x + bounds.width - x)
-        ch = ch.coerceAtMost(bounds.y + bounds.height - y)
-        if (cw <= 0 || ch <= 0) return null
-
-        val raw = Robot().createScreenCapture(Rectangle(x, y, cw, ch))
-        val scaled = scale(raw, maxW, maxH)
+        val scaled = scale(full, maxW, maxH)
         val out = ByteArrayOutputStream()
         ImageIO.write(scaled, "png", out)
         out.toByteArray()
     }.getOrNull()
+
+    /**
+     * 多显示器拼接：算所有屏幕的并集画布，逐屏截取按相对坐标贴上去。
+     *
+     * 逐屏截而不是对并集矩形一次 createScreenCapture —— 某些 JDK 对
+     * 「负坐标副屏 + 跨屏大矩形」的虚拟屏幕截取会黑屏/异常，逐屏最稳。
+     * 单屏失败只跳过（留黑），保证主屏至少能截到。
+     */
+    private fun stitch(devices: Array<GraphicsDevice>, robot: Robot): BufferedImage {
+        val bounds = devices
+            .map { it.defaultConfiguration.bounds }
+            .filter { it.width > 0 && it.height > 0 }
+        if (bounds.isEmpty()) {
+            return robot.createScreenCapture(GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration.bounds)
+        }
+        val minX = bounds.minOf { it.x }
+        val minY = bounds.minOf { it.y }
+        val w = bounds.maxOf { it.x + it.width } - minX
+        val h = bounds.maxOf { it.y + it.height } - minY
+        val canvas = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
+        val g = canvas.createGraphics()
+        for (b in bounds) {
+            val img = runCatching { robot.createScreenCapture(Rectangle(b.x, b.y, b.width, b.height)) }
+                .getOrNull() ?: continue
+            g.drawImage(img, b.x - minX, b.y - minY, null)
+            img.flush()
+        }
+        g.dispose()
+        return canvas
+    }
 
     /** 等比缩放（只缩不放）。 */
     private fun scale(img: BufferedImage, maxW: Int, maxH: Int): BufferedImage {
