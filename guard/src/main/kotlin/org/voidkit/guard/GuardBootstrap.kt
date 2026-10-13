@@ -125,6 +125,16 @@ object GuardBootstrap {
         hub = g
 
         integrity.publishSnapshot()
+        // 归属地库启动自检：拿 8.8.8.8 打一枪，库坏了这里立刻知道（而不是
+        // 等服主某天 /gcheck 时发现什么都不显示）。失败只降级不影响主流程。
+        runCatching {
+            val sample = org.voidkit.guard.server.IpRegion.lookup("8.8.8.8")
+            if (sample.isBlank()) {
+                LOG.warn("VoidkitGuard 归属地库初始化失败（IP 归属地将不显示，其余功能不受影响）")
+            } else {
+                LOG.info("VoidkitGuard 归属地库就绪（样例 8.8.8.8 → {}）", sample)
+            }
+        }
         LOG.info(
             "VoidkitGuard 就绪：模式={}｜封禁 {} 条｜白名单 {} 条（{} 待审）",
             g.config.integrityMode, g.bans.count(), g.whitelist.entries.size, g.whitelist.pendingCount(),

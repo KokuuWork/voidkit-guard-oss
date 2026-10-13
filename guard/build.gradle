@@ -14,6 +14,9 @@ dependencies {
 
     // SQLite 驱动：jarJar 声明在根 build.gradle（只 guard 背，约 13MB 原生库）
     implementation 'org.xerial:sqlite-jdbc:3.53.4.0'
+
+    // IP 归属地离线查询（ip2region，绑定 ~100KB；11MB 数据文件在 resources）
+    implementation 'org.lionsoul:ip2region:2.7.0'
 }
 
 neoForge {

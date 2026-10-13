@@ -152,6 +152,8 @@ class DeepScanFeature : GuardFeature() {
             },
             xrayWarnings = identity?.let { hub.xrayStats.recentWarnings(it.uuid) } ?: emptyList(),
             combatWarnings = identity?.let { hub.combat.recentWarnings(it.uuid) } ?: emptyList(),
+            related = identity?.let { hub.db.relatedIdentities(it) } ?: emptyList(),
+            relatedBanned = identity?.let { hub.db.relatedBanned(it) } ?: emptyList(),
         )
     }
 
@@ -232,6 +234,13 @@ class DeepScanFeature : GuardFeature() {
                 "score", r.score,
                 "lines", ApiJson.arr(r.lines),
                 "reasons", ApiJson.arr(r.reasons),
+                "related", r.related?.map { hit ->
+                    ApiJson.obj(
+                        "name", hit.identity.name,
+                        "reasons", ApiJson.arr(hit.reasons),
+                        "strength", hit.strength,
+                    )
+                },
                 "deep", r.deep?.let { d ->
                     ApiJson.obj(
                         "ips", ApiJson.arr(d.ips.map { "${it.iface}:${it.ip}${if (it.virtual) "(虚拟)" else ""}" }),
@@ -279,6 +288,8 @@ object GuardVerdict {
         val lines: List<String>,
         val reasons: List<String>,
         val deep: DeepScanResult?,
+        /** 同源账号（小号挖掘），面板/命令展示用。 */
+        val related: List<GuardDb.RelatedHit> = emptyList(),
     )
 
     fun build(
@@ -293,6 +304,10 @@ object GuardVerdict {
         xrayWarnings: List<String> = emptyList(),
         /** 近 24h 战斗遥测告警（同上）。 */
         combatWarnings: List<String> = emptyList(),
+        /** 同源账号（小号挖掘结果，含各自命中字段）。 */
+        related: List<GuardDb.RelatedHit> = emptyList(),
+        /** 关联账号中正处在封禁中的（换号 evasion 实锤）。 */
+        relatedBanned: List<GuardDb.RelatedHit> = emptyList(),
     ): Report {
         var score = 0
         val reasons = ArrayList<String>()
@@ -300,8 +315,20 @@ object GuardVerdict {
 
         // ---- 身份档案 ----
         lines.add("身份：&f${identity?.name ?: name}&7｜UUID &f${identity?.uuid?.take(13) ?: "未知"}")
-        lines.add("连接：&f${identity?.ip?.ifBlank { "未知" } ?: "未知"}&7｜机器码 &f${identity?.machine?.take(12)?.ifBlank { "未采集" } ?: "未采集"}")
+        val ipRegion = identity?.ip?.let { IpRegion.lookup(it) } ?: ""
+        val ipText = identity?.ip?.ifBlank { "未知" } ?: "未知"
+        lines.add("连接：&f$ipText&7${if (ipRegion.isNotBlank()) " &7($ipRegion)" else ""}｜机器码 &f${identity?.machine?.take(12)?.ifBlank { "未采集" } ?: "未采集"}")
         lines.add("网卡 &f${identity?.macs?.size ?: 0}&7 个｜QQ 记录 &f${identity?.qq?.size ?: 0}&7 个")
+
+        // ---- 同源账号（小号挖掘） ----
+        if (related.isNotEmpty()) {
+            val top = related.take(5).joinToString("；") { hit ->
+                "${hit.identity.name}&7（${hit.reasons.joinToString("/")}）"
+            }
+            lines.add("关联账号：&f${related.size}&7 个 —— $top")
+        } else {
+            lines.add("关联账号：&7无（机器码/网卡/QQ/IP 都没撞上）")
+        }
 
         // ---- 握手状态 ----
         if (session != null) {
@@ -319,6 +346,19 @@ object GuardVerdict {
         if (banned != null) {
             score += 100
             reasons.add("身份撞有效封禁（#${banned.id} ${banned.keyType}）")
+        }
+        // 同源账号里有人被封 = 「换号 evasion」实锤档：机器码/网卡跟着硬件走，
+        // 能共享到被封账号标识的，基本就是同一个人换皮重进。
+        if (relatedBanned.isNotEmpty()) {
+            score += 60
+            reasons.add(
+                "关联账号在封禁中 ${relatedBanned.size} 个（+60）：" +
+                    relatedBanned.joinToString("；") { "${it.identity.name}（${it.reasons.joinToString("/")}）" }.take(120)
+            )
+        } else if (related.any { it.strength >= 4 }) {
+            // 强同源（机器码共享）但没人被封：只提示不重罚 —— 兄弟共用电脑也可能
+            score += 25
+            reasons.add("存在机器码同源账号 ${related.count { it.strength >= 4 }} 个（+25，小号嫌疑，需人工复核）")
         }
         if (session != null) {
             val confirmed = session.signals.filter { it.severity >= 2 }
@@ -385,6 +425,6 @@ object GuardVerdict {
             score >= 20 -> Level.SUSPICIOUS
             else -> Level.CLEAN
         }
-        return Report(name, level, score, lines, reasons, deep)
+        return Report(name, level, score, lines, reasons, deep, related)
     }
 }

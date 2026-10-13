@@ -168,6 +168,70 @@ class BanFeature : GuardFeature() {
 
     fun count(): Int = hub.db.banCount()
 
+    // ---------- 联防（封禁清单跨服共享） ----------
+
+    /**
+     * 导出活跃封禁为联防包（JSON）。
+     *
+     * 用途：你有几个服，A 服封了的人 B 服自动拦。导出的 key 里机器码/网卡/QQ
+     * 本来就是加盐哈希（原文从不出客户端），IP/UUID 是服务器本来就要管的 ——
+     * 整包只在你自己的服务器之间流转，不出你的手。
+     */
+    fun exportFence(): String {
+        val rows = hub.db.activeBans()
+        val obj = com.google.gson.JsonObject()
+        obj.addProperty("v", 1)
+        obj.addProperty("exportedAt", System.currentTimeMillis())
+        val arr = com.google.gson.JsonArray()
+        for (r in rows) {
+            arr.add(
+                com.google.gson.JsonObject().apply {
+                    addProperty("type", r.keyType)
+                    addProperty("value", r.keyValue)
+                    addProperty("reason", r.reason)
+                    addProperty("created", r.created)
+                    addProperty("expires", r.expires)
+                }
+            )
+        }
+        obj.add("bans", arr)
+        return obj.toString()
+    }
+
+    /**
+     * 导入联防包。只收联防包认识的字段，每条先查活跃表、已存在就跳过；
+     * 返回（导入数, 跳过数）。类型白名单外的条目直接丢弃 —— 宁可少封不错封。
+     */
+    fun importFence(json: String, admin: String): Pair<Int, Int> {
+        val root = runCatching {
+            com.google.gson.JsonParser.parseString(json).asJsonObject
+        }.getOrNull() ?: return 0 to 0
+        val arr = runCatching { root.getAsJsonArray("bans") }.getOrNull() ?: return 0 to 0
+        val okTypes = setOf("ip", "machine", "mac", "mac0", "mac1", "mac2", "mac3", "qq", "qq0", "qq1", "qq2", "uuid", "name")
+        var imported = 0
+        var skipped = 0
+        for (e in arr) {
+            val o = runCatching { e.asJsonObject }.getOrNull() ?: continue
+            val type = o.get("type")?.asString?.lowercase() ?: continue
+            val value = o.get("value")?.asString ?: continue
+            if (type !in okTypes || value.isBlank()) {
+                skipped++
+                continue
+            }
+            if (hub.db.activeBan(type, value) != null) {
+                skipped++
+                continue
+            }
+            val reason = (o.get("reason")?.asString ?: "").ifBlank { "联防同步" } + "（联防）"
+            hub.db.addBan(type, value, reason.take(200), admin, o.get("expires")?.asLong ?: 0L)
+            imported++
+        }
+        if (imported > 0) {
+            hub.audit("fence_import", actor = admin, detail = mapOf("imported" to imported, "skipped" to skipped))
+        }
+        return imported to skipped
+    }
+
     // ---------- 命令 ----------
 
     override fun registerCommands(dispatcher: com.mojang.brigadier.CommandDispatcher<net.minecraft.commands.CommandSourceStack>) {
@@ -331,12 +395,24 @@ class BanFeature : GuardFeature() {
                 id.qq.forEachIndexed { i, q -> add("qq$i" to q) }
             }
         )
+        val region = IpRegion.lookup(id.ip)
         Msg.info(source, "===== $name 身份档案 =====")
         Msg.info(source, "UUID：${id.uuid}")
-        Msg.info(source, "最近 IP：${id.ip.ifBlank { "未知" }}")
+        Msg.info(source, "最近 IP：${id.ip.ifBlank { "未知" }}${if (region.isNotBlank()) "（$region）" else ""}")
         Msg.info(source, "机器码：${id.machine.ifBlank { "未知" }}")
         Msg.info(source, "网卡：${if (id.macs.isEmpty()) "未知" else id.macs.joinToString(", ")}")
         Msg.info(source, "QQ 记录：${if (id.qq.isEmpty()) "未采集到" else id.qq.joinToString(", ")}")
+
+        // 同源账号：换号重进在这行面前无效 —— 机器码/网卡跟着硬件走
+        val related = hub.db.relatedIdentities(id)
+        if (related.isEmpty()) {
+            Msg.info(source, "关联账号：无")
+        } else {
+            Msg.info(source, "关联账号（${related.size}）：")
+            for (r in related.take(10)) {
+                Msg.text(source, "&7- &f${r.identity.name} &7（${r.reasons.joinToString("/")}｜末次在线 ${SimpleDateFormat("MM-dd HH:mm").format(Date(r.identity.lastSeen))}）")
+            }
+        }
         Msg.text(
             source,
             if (hit != null) "状态：&c封禁中（#${hit.id} ${hit.reason}）" else "状态：&a正常",
@@ -392,6 +468,7 @@ class BanFeature : GuardFeature() {
             if (id == null) {
                 return@get ApiJson.obj("ok", true, "found", false)
             }
+            val region = IpRegion.lookup(id.ip)
             ApiJson.obj(
                 "ok", true,
                 "found", true,
@@ -399,13 +476,41 @@ class BanFeature : GuardFeature() {
                     "uuid", id.uuid,
                     "name", id.name,
                     "ip", id.ip,
+                    "ipRegion", region,
                     "machine", id.machine,
                     "macs", ApiJson.arr(id.macs),
                     "qq", ApiJson.arr(id.qq),
                     "firstSeen", id.firstSeen,
                     "lastSeen", id.lastSeen,
                 ),
+                // 同源账号：换号重进在这里现形（机器码/网卡/QQ 任意撞上即列出）
+                "related", hub.db.relatedIdentities(id).map { r ->
+                    ApiJson.obj(
+                        "name", r.identity.name,
+                        "uuid", r.identity.uuid,
+                        "reasons", ApiJson.arr(r.reasons),
+                        "strength", r.strength,
+                        "lastSeen", r.identity.lastSeen,
+                    )
+                },
             )
+        }
+
+        // ---------- 联防（封禁清单跨服共享） ----------
+        // GET  = 导出活跃封禁包；POST = 导入（body 直接就是另一个服导出的包，
+        // 或 {"json": "<包>"} 包一层）。面板做「联防」页直接用这一对。
+        router.get("/api/guard/fence") { _ ->
+            val export = hub.bans.exportFence()
+            val count = runCatching {
+                com.google.gson.JsonParser.parseString(export).asJsonObject.getAsJsonArray("bans").size()
+            }.getOrDefault(0)
+            ApiJson.obj("ok", true, "count", count, "json", export)
+        }
+        router.post("/api/guard/fence") { req ->
+            val body = req.bodyJson()
+            val json = body.get("json")?.asString ?: body.toString()
+            val (imported, skipped) = hub.bans.importFence(json, "panel")
+            ApiJson.obj("ok", true, "imported", imported, "skipped", skipped)
         }
     }
 }

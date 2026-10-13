@@ -544,6 +544,125 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
         }
     }
 
+    // ---------------- 同源账号（小号挖掘） ----------------
+
+    /**
+     * 一条同源命中：关联档案 + 命中字段。机器码/网卡跟硬件走（强），
+     * QQ 痕迹跟人走（中），IP 跟宽带走（弱，重拨/同一出口会撞）。
+     */
+    class RelatedHit(val identity: IdentityRow, val reasons: List<String>) {
+        /** 强度分：机器码 4、网卡 3、QQ 2、IP 1 —— 排序用，让最强的排最前。 */
+        val strength: Int get() = reasons.fold(0) { acc, r ->
+            acc + when {
+                r.startsWith("机器码") -> 4
+                r.startsWith("网卡") -> 3
+                r.startsWith("QQ") -> 2
+                else -> 1
+            }
+        }
+    }
+
+    /**
+     * 同源账号挖掘：找出与目标共享任一强标识的其它档案。
+     *
+     * 「换号重进」在这条查询面前无效 —— UUID/名字随便换，机器码和网卡
+     * 跟着硬件走。SQL 用 OR 粗筛（macs/qq 是逗号拼接串，LIKE 命中后再在
+     * Kotlin 里逐字段复核出精确理由），行数是小服规模（千级），毫秒级。
+     */
+    fun relatedIdentities(self: IdentityRow): List<RelatedHit> = read { conn ->
+        val conds = ArrayList<String>()
+        val params = ArrayList<Any?>()
+        if (self.machine.isNotBlank()) {
+            conds.add("machine = ?"); params.add(self.machine)
+        }
+        for (m in self.macs) {
+            conds.add("macs LIKE ?"); params.add("%$m%")
+        }
+        for (q in self.qq) {
+            conds.add("qq LIKE ?"); params.add("%$q%")
+        }
+        if (self.ip.isNotBlank()) {
+            conds.add("ip = ?"); params.add(self.ip)
+        }
+        if (conds.isEmpty()) return@read emptyList<RelatedHit>()
+
+        val sql = "SELECT uuid,name,ip,machine,macs,qq,first_seen,last_seen FROM identities " +
+            "WHERE uuid != ? AND (" + conds.joinToString(" OR ") + ") LIMIT 64"
+        conn.prepareStatement(sql).use { ps ->
+            ps.setString(1, self.uuid)
+            params.forEachIndexed { i, p -> ps.setString(i + 2, p as String) }
+            ps.executeQuery().use { rs ->
+                val out = ArrayList<RelatedHit>()
+                while (rs.next()) {
+                    val o = IdentityRow(
+                        uuid = rs.getString("uuid"),
+                        name = rs.getString("name"),
+                        ip = rs.getString("ip"),
+                        machine = rs.getString("machine"),
+                        macs = rs.getString("macs").split(',').filter { it.isNotBlank() },
+                        qq = rs.getString("qq").split(',').filter { it.isNotBlank() },
+                        firstSeen = rs.getLong("first_seen"),
+                        lastSeen = rs.getLong("last_seen"),
+                    )
+                    // 逐字段复核，产出人能看懂的理由
+                    val reasons = ArrayList<String>()
+                    if (self.machine.isNotBlank() && self.machine == o.machine) reasons.add("机器码")
+                    val sharedMac = self.macs.intersect(o.macs.toSet())
+                    if (sharedMac.isNotEmpty()) reasons.add("网卡×${sharedMac.size}")
+                    val sharedQq = self.qq.intersect(o.qq.toSet())
+                    if (sharedQq.isNotEmpty()) reasons.add("QQ×${sharedQq.size}")
+                    if (self.ip.isNotBlank() && self.ip == o.ip) reasons.add("IP")
+                    if (reasons.isNotEmpty()) out.add(RelatedHit(o, reasons))
+                }
+                out.sortedByDescending { it.strength }
+            }
+        }
+    }
+
+    /** 目标档案是否有关联账号正处在封禁中（综合判定用它加「实锤分」）。 */
+    fun relatedBanned(self: IdentityRow): List<RelatedHit> =
+        relatedIdentities(self).filter { hit ->
+            matchBan(
+                buildList {
+                    add("uuid" to hit.identity.uuid)
+                    add("name" to hit.identity.name.lowercase())
+                    if (hit.identity.ip.isNotBlank()) add("ip" to hit.identity.ip)
+                    if (hit.identity.machine.isNotBlank()) add("machine" to hit.identity.machine)
+                    hit.identity.macs.forEachIndexed { i, m -> add("mac$i" to m) }
+                    hit.identity.qq.forEachIndexed { i, q -> add("qq$i" to q) }
+                }
+            ) != null
+        }
+
+    // ---------------- 联防（封禁清单跨服共享） ----------------
+
+    /** 全部活跃封禁（未过期），导出联防包用。 */
+    fun activeBans(): List<BanRow> = read { conn ->
+        conn.prepareStatement(
+            "SELECT id,key_type,key_value,reason,admin,created,expires FROM bans " +
+                "WHERE expires = 0 OR expires > ? ORDER BY id DESC"
+        ).use { ps ->
+            ps.setLong(1, System.currentTimeMillis())
+            ps.executeQuery().use { rs ->
+                val out = ArrayList<BanRow>()
+                while (rs.next()) {
+                    out.add(
+                        BanRow(
+                            id = rs.getLong("id"),
+                            keyType = rs.getString("key_type"),
+                            keyValue = rs.getString("key_value"),
+                            reason = rs.getString("reason"),
+                            admin = rs.getString("admin"),
+                            created = rs.getLong("created"),
+                            expires = rs.getLong("expires"),
+                        )
+                    )
+                }
+                out
+            }
+        }
+    }
+
     // ---------------- 审计 ----------------
 
     fun audit(limit: Int, type: String?): List<AuditRow> = read { conn ->

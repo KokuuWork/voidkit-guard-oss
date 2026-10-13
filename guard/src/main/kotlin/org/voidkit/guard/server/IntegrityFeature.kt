@@ -114,6 +114,11 @@ class IntegrityFeature : GuardFeature() {
                 )
                 .then(Commands.literal("reload").executes { reloadCmd(it.source) })
                 .then(
+                    Commands.literal("fence")
+                        .then(Commands.literal("export").executes { fenceExport(it.source) })
+                        .then(Commands.literal("import").executes { fenceImport(it.source) })
+                )
+                .then(
                     Commands.literal("key")
                         .then(Commands.literal("rotate").executes { keyRotate(it.source) })
                         .then(Commands.literal("export").executes { keyExport(it.source) })
@@ -152,6 +157,42 @@ class IntegrityFeature : GuardFeature() {
     private fun reloadCmd(source: CommandSourceStack): Int {
         onReload(hub.server.let { org.voidkit.core.api.VoidkitServer.require() })
         Msg.ok(source, "guard 配置与白名单已重载")
+        return 1
+    }
+
+    // ---------- 联防（封禁清单跨服共享） ----------
+
+    /** 导出活跃封禁到 `guard/fence-export.json`，拷到别的服的 `guard/fence-import.json` 即可导入。 */
+    private fun fenceExport(source: CommandSourceStack): Int {
+        val json = hub.bans.exportFence()
+        val file = org.voidkit.core.util.ConfigFiles.resolve("guard/fence-export.json")
+        runCatching {
+            java.nio.file.Files.createDirectories(file.parent)
+            java.nio.file.Files.writeString(file, json, Charsets.UTF_8)
+        }.onFailure {
+            Msg.err(source, "写出失败：${it.message}")
+            return 0
+        }
+        Msg.ok(source, "已导出活跃封禁到 ${file.toAbsolutePath()}")
+        Msg.text(source, "&7拷到目标服的 &fguard/fence-import.json&7 后在那边执行 &f/guard fence import")
+        return 1
+    }
+
+    /** 从 `guard/fence-import.json` 导入联防包（先放文件再执行）。 */
+    private fun fenceImport(source: CommandSourceStack): Int {
+        val file = org.voidkit.core.util.ConfigFiles.resolve("guard/fence-import.json")
+        if (!java.nio.file.Files.isRegularFile(file)) {
+            Msg.err(source, "没找到 ${file.toAbsolutePath()}（先放文件再执行）")
+            return 0
+        }
+        val json = runCatching { java.nio.file.Files.readString(file, Charsets.UTF_8) }.getOrNull()
+        if (json.isNullOrBlank()) {
+            Msg.err(source, "文件是空的")
+            return 0
+        }
+        val admin = source.player?.gameProfile?.name ?: "console"
+        val (imported, skipped) = hub.bans.importFence(json, admin)
+        Msg.ok(source, "联防导入完成：新增 $imported 条，跳过 $skipped 条（已存在或不认识的类型）")
         return 1
     }
 

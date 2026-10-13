@@ -23,6 +23,10 @@ ext {
 
     // 封禁/审计/截屏记录用嵌入式 SQLite（与查熊同款：零配置、单文件、WAL）。
     sqliteVersion = '3.53.4.0'
+
+    // IP 归属地离线库（ip2region，纯本地查询不联网）。绑定与 xdb 数据文件的
+    // 版本要配对：数据是 v4 格式（data/ip2region_v4.xdb），绑定时新版本。
+    ip2regionVersion = '2.7.0'
 }
 
 subprojects { p ->
@@ -70,6 +74,14 @@ subprojects { p ->
                     prefer rootProject.ext.sqliteVersion
                 }
             }
+            // ip2region 绑定是纯 Java 小 jar（~100KB），只内嵌绑定本身；
+            // 11MB 的 xdb 数据走 resources，首次查询时解到数据目录。
+            jarJar(implementation("org.lionsoul:ip2region")) {
+                version {
+                    strictly '[2.7,)'
+                    prefer rootProject.ext.ip2regionVersion
+                }
+            }
         }
     }
 
@@ -85,6 +97,7 @@ subprojects { p ->
         dependencies {
             if (p.name == 'guard') {
                 additionalRuntimeClasspath "org.xerial:sqlite-jdbc:${rootProject.ext.sqliteVersion}"
+                additionalRuntimeClasspath "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}"
             }
         }
     }
