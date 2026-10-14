@@ -54,8 +54,6 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
         val name: String,
         val ip: String,
         val machine: String,
-        val macs: List<String>,
-        val qq: List<String>,
         val firstSeen: Long,
         val lastSeen: Long,
     )
@@ -185,8 +183,6 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
                     "name TEXT NOT NULL," +
                     "ip TEXT NOT NULL DEFAULT ''," +
                     "machine TEXT NOT NULL DEFAULT ''," +
-                    "macs TEXT NOT NULL DEFAULT ''," +
-                    "qq TEXT NOT NULL DEFAULT ''," +
                     "first_seen INTEGER NOT NULL," +
                     "last_seen INTEGER NOT NULL)"
             )
@@ -470,30 +466,26 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
 
     // ---------------- 身份档案 ----------------
 
-    /**  upsert 一份指纹档案（按 uuid）。 */
+    /**  upsert 一份指纹档案（按 uuid）。只落 IP + 机器码。 */
     fun recordIdentity(
         uuid: String,
         name: String,
         ip: String,
         machine: String,
-        macs: List<String>,
-        qq: List<String>,
     ) {
         writeAsync { conn ->
             val now = System.currentTimeMillis()
             conn.prepareStatement(
-                "INSERT INTO identities(uuid,name,ip,machine,macs,qq,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?) " +
+                "INSERT INTO identities(uuid,name,ip,machine,first_seen,last_seen) VALUES(?,?,?,?,?,?) " +
                     "ON CONFLICT(uuid) DO UPDATE SET name=excluded.name, ip=excluded.ip, machine=excluded.machine, " +
-                    "macs=excluded.macs, qq=excluded.qq, last_seen=excluded.last_seen"
+                    "last_seen=excluded.last_seen"
             ).use { ps ->
                 ps.setString(1, uuid)
                 ps.setString(2, name)
                 ps.setString(3, ip)
                 ps.setString(4, machine)
-                ps.setString(5, macs.joinToString(","))
-                ps.setString(6, qq.joinToString(","))
-                ps.setLong(7, now)
-                ps.setLong(8, now)
+                ps.setLong(5, now)
+                ps.setLong(6, now)
                 ps.executeUpdate()
             }
         }
@@ -501,7 +493,7 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
 
     fun identityByUuid(uuid: String): IdentityRow? = read { conn ->
         conn.prepareStatement(
-            "SELECT uuid,name,ip,machine,macs,qq,first_seen,last_seen FROM identities WHERE uuid = ?"
+            "SELECT uuid,name,ip,machine,first_seen,last_seen FROM identities WHERE uuid = ?"
         ).use { ps ->
             ps.setString(1, uuid)
             ps.executeQuery().use { rs ->
@@ -511,8 +503,6 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
                         name = rs.getString("name"),
                         ip = rs.getString("ip"),
                         machine = rs.getString("machine"),
-                        macs = rs.getString("macs").split(',').filter { it.isNotBlank() },
-                        qq = rs.getString("qq").split(',').filter { it.isNotBlank() },
                         firstSeen = rs.getLong("first_seen"),
                         lastSeen = rs.getLong("last_seen"),
                     )
@@ -523,7 +513,7 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
 
     fun identityByName(name: String): IdentityRow? = read { conn ->
         conn.prepareStatement(
-            "SELECT uuid,name,ip,machine,macs,qq,first_seen,last_seen FROM identities WHERE name = ? " +
+            "SELECT uuid,name,ip,machine,first_seen,last_seen FROM identities WHERE name = ? " +
                 "ORDER BY last_seen DESC LIMIT 1"
         ).use { ps ->
             ps.setString(1, name)
@@ -534,8 +524,6 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
                         name = rs.getString("name"),
                         ip = rs.getString("ip"),
                         machine = rs.getString("machine"),
-                        macs = rs.getString("macs").split(',').filter { it.isNotBlank() },
-                        qq = rs.getString("qq").split(',').filter { it.isNotBlank() },
                         firstSeen = rs.getLong("first_seen"),
                         lastSeen = rs.getLong("last_seen"),
                     )
@@ -547,27 +535,22 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
     // ---------------- 同源账号（小号挖掘） ----------------
 
     /**
-     * 一条同源命中：关联档案 + 命中字段。机器码/网卡跟硬件走（强），
-     * QQ 痕迹跟人走（中），IP 跟宽带走（弱，重拨/同一出口会撞）。
+     * 一条同源命中：关联档案 + 命中字段。机器码跟硬件走（强），
+     * IP 跟宽带走（弱，重拨/同一出口会撞）。只有这两个维度。
      */
     class RelatedHit(val identity: IdentityRow, val reasons: List<String>) {
-        /** 强度分：机器码 4、网卡 3、QQ 2、IP 1 —— 排序用，让最强的排最前。 */
+        /** 强度分：机器码 4、IP 1 —— 排序用，让最强的排最前。 */
         val strength: Int get() = reasons.fold(0) { acc, r ->
-            acc + when {
-                r.startsWith("机器码") -> 4
-                r.startsWith("网卡") -> 3
-                r.startsWith("QQ") -> 2
-                else -> 1
-            }
+            acc + if (r.startsWith("机器码")) 4 else 1
         }
     }
 
     /**
-     * 同源账号挖掘：找出与目标共享任一强标识的其它档案。
+     * 同源账号挖掘：找出与目标共享机器码或 IP 的其它档案。
      *
-     * 「换号重进」在这条查询面前无效 —— UUID/名字随便换，机器码和网卡
-     * 跟着硬件走。SQL 用 OR 粗筛（macs/qq 是逗号拼接串，LIKE 命中后再在
-     * Kotlin 里逐字段复核出精确理由），行数是小服规模（千级），毫秒级。
+     * 「换号重进」在这条查询面前无效 —— UUID/名字随便换，机器码
+     * 跟着硬件走。SQL 用 OR 粗筛后在 Kotlin 里逐字段复核出精确理由，
+     * 行数是小服规模（千级），毫秒级。
      */
     fun relatedIdentities(self: IdentityRow): List<RelatedHit> = read { conn ->
         val conds = ArrayList<String>()
@@ -575,18 +558,12 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
         if (self.machine.isNotBlank()) {
             conds.add("machine = ?"); params.add(self.machine)
         }
-        for (m in self.macs) {
-            conds.add("macs LIKE ?"); params.add("%$m%")
-        }
-        for (q in self.qq) {
-            conds.add("qq LIKE ?"); params.add("%$q%")
-        }
         if (self.ip.isNotBlank()) {
             conds.add("ip = ?"); params.add(self.ip)
         }
         if (conds.isEmpty()) return@read emptyList<RelatedHit>()
 
-        val sql = "SELECT uuid,name,ip,machine,macs,qq,first_seen,last_seen FROM identities " +
+        val sql = "SELECT uuid,name,ip,machine,first_seen,last_seen FROM identities " +
             "WHERE uuid != ? AND (" + conds.joinToString(" OR ") + ") LIMIT 64"
         conn.prepareStatement(sql).use { ps ->
             ps.setString(1, self.uuid)
@@ -599,18 +576,12 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
                         name = rs.getString("name"),
                         ip = rs.getString("ip"),
                         machine = rs.getString("machine"),
-                        macs = rs.getString("macs").split(',').filter { it.isNotBlank() },
-                        qq = rs.getString("qq").split(',').filter { it.isNotBlank() },
                         firstSeen = rs.getLong("first_seen"),
                         lastSeen = rs.getLong("last_seen"),
                     )
                     // 逐字段复核，产出人能看懂的理由
                     val reasons = ArrayList<String>()
                     if (self.machine.isNotBlank() && self.machine == o.machine) reasons.add("机器码")
-                    val sharedMac = self.macs.intersect(o.macs.toSet())
-                    if (sharedMac.isNotEmpty()) reasons.add("网卡×${sharedMac.size}")
-                    val sharedQq = self.qq.intersect(o.qq.toSet())
-                    if (sharedQq.isNotEmpty()) reasons.add("QQ×${sharedQq.size}")
                     if (self.ip.isNotBlank() && self.ip == o.ip) reasons.add("IP")
                     if (reasons.isNotEmpty()) out.add(RelatedHit(o, reasons))
                 }
@@ -628,8 +599,6 @@ class GuardDb(private val dbPath: Path) : AutoCloseable {
                     add("name" to hit.identity.name.lowercase())
                     if (hit.identity.ip.isNotBlank()) add("ip" to hit.identity.ip)
                     if (hit.identity.machine.isNotBlank()) add("machine" to hit.identity.machine)
-                    hit.identity.macs.forEachIndexed { i, m -> add("mac$i" to m) }
-                    hit.identity.qq.forEachIndexed { i, q -> add("qq$i" to q) }
                 }
             ) != null
         }

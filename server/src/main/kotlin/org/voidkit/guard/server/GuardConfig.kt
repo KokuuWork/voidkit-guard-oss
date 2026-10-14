@@ -57,18 +57,12 @@ class GuardConfig {
     var hashlockRequireReview: Boolean = true
 
     // ---------- 硬件指纹采集 ----------
+    //
+    // 只采集机器码。网卡 MAC / QQ / 微信属于更敏感的个人信息，
+    // 一律不采 —— 所以这里根本没有对应的开关。
 
     /** 采集主板/系统机器码哈希（Windows MachineGuid / Linux machine-id / macOS IOPlatformUUID）。 */
     var collectMachine: Boolean = true
-
-    /** 采集物理网卡 MAC 哈希（过滤虚拟网卡）。 */
-    var collectMac: Boolean = true
-
-    /** 采集本机 QQ 登录记录哈希（Documents/Tencent Files 账号目录 + 注册表）。 */
-    var collectQQ: Boolean = true
-
-    /** 采集本机微信痕迹哈希（安装路径/文档目录；微信不落明文账号，尽力而为）。 */
-    var collectWeChat: Boolean = true
 
     /**
      * 指纹加盐。同一份指纹在不同盐下哈希不同 —— 库泄露也无法跨服关联玩家。
@@ -80,18 +74,14 @@ class GuardConfig {
     var requireFingerprint: Boolean = false
 
     // ---------- 封禁策略 ----------
+    //
+    // 封禁维度：IP + 机器码 + UUID。
 
     /** 自动封禁时是否带上连接 IP。 */
     var banIp: Boolean = true
 
     /** 自动封禁时是否带上机器码。 */
     var banMachine: Boolean = true
-
-    /** 自动封禁时是否带上全部网卡 MAC。 */
-    var banMac: Boolean = true
-
-    /** 自动封禁时是否带上 QQ 登录记录。 */
-    var banQQ: Boolean = true
 
     /** 手动封禁玩家时是否同时封 UUID。 */
     var banUuid: Boolean = true
@@ -372,15 +362,10 @@ object GuardComments {
         "hashlockAutoLearn" to "哈希锁：首个干净清单自动成为白名单基线（服主审核后生效）",
         "hashlockRequireReview" to "待审白名单条目是否拦截（false=自动放行）",
         "collectMachine" to "采集主板/系统机器码哈希（只上传哈希，原文不出客户端）",
-        "collectMac" to "采集物理网卡 MAC 哈希（过滤虚拟网卡）",
-        "collectQQ" to "采集本机 QQ 登录记录哈希",
-        "collectWeChat" to "采集本机微信痕迹哈希（微信不落明文账号，尽力而为）",
         "hashSalt" to "指纹加盐：不同盐下哈希不同，库泄露也无法跨服关联。改盐会使历史指纹全部失效",
         "requireFingerprint" to "强制要求回传指纹。false=采集失败也不卡进服",
         "banIp" to "自动封禁时带上连接 IP",
         "banMachine" to "自动封禁时带上机器码",
-        "banMac" to "自动封禁时带上全部网卡 MAC",
-        "banQQ" to "自动封禁时带上 QQ 登录记录",
         "banUuid" to "手动封禁玩家时同时封 UUID",
         "defaultBanDays" to "手动封禁默认天数，0=永久",
         "screenshotEnabled" to "截屏功能总开关",

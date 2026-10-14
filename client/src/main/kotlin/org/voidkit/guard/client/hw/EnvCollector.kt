@@ -2,21 +2,23 @@ package org.voidkit.guard.client.hw
 
 import com.sun.management.OperatingSystemMXBean
 import org.voidkit.guard.client.common.EnvInfo
-import org.voidkit.guard.client.common.GCrypto
 import java.lang.management.ManagementFactory
-import java.util.Locale
-import java.util.TimeZone
 
 /**
- * 运行环境画像采集（系统版本 + 硬件配置 + 区域信息）。
+ * 运行环境画像采集（系统版本 + 硬件配置）。
  *
  * ## 为什么值得采
  *
- * 1. **身份佐证**：同一台机器的 CPU/GPU/内存/时区组合跨会话稳定，
+ * 1. **身份佐证**：同一台机器的 CPU/GPU/内存组合跨会话稳定，
  *    换号不换机的人在这露出马脚（`envHash` 进身份档案）。
  * 2. **异常信号**：软件渲染器（llvmpipe/软渲染）意味着虚拟机/远程桌面/
  *    无显卡环境 —— 正常玩 MC 的玩家几乎不会这样，是强信号。
  * 3. **报告可读**：服主看到的是「Win11 + 13700K + RTX 4070」而不是一串哈希。
+ *
+ * ## 不采位置/区域
+ *
+ * 时区、系统区域、语言属于位置类信息，一律不采（字段都已
+ * 从 EnvInfo 移除）。环境画像只保留设备配置：OS/CPU/GPU/内存。
  *
  * ## GPU 怎么拿
  *
@@ -31,7 +33,6 @@ object EnvCollector {
         val osVer = System.getProperty("os.version") ?: ""
         val arch = System.getProperty("os.arch") ?: ""
         val runtime = Runtime.getRuntime()
-        val args = ManagementFactory.getRuntimeMXBean().inputArguments ?: emptyList<String>()
 
         return EnvInfo(
             osName = os,
@@ -42,10 +43,7 @@ object EnvCollector {
             gpu = gpuRenderer(),
             glVendor = gpuVendor(),
             ramMb = totalRamMb(),
-            timezone = TimeZone.getDefault().id,
-            locale = "${Locale.getDefault().toLanguageTag()}|${System.getProperty("user.country") ?: ""}",
             javaVersion = System.getProperty("java.version") ?: "",
-            vmArgsHash = GCrypto.sha256Hex(args.joinToString(" ")),
         )
     }
 

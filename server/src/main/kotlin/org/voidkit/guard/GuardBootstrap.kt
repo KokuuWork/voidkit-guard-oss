@@ -10,7 +10,7 @@ import org.voidkit.core.core.PluginRegistry
 import org.voidkit.core.platform.Platforms
 import org.voidkit.core.util.ConfigFiles
 import org.voidkit.guard.platform.GChannel
-import org.voidkit.guard.platform.GuardPlatforms
+import org.voidkit.guard.platform.neoforge.NeoforgeServer
 import org.voidkit.guard.server.AuditFeature
 import org.voidkit.guard.server.BanFeature
 import org.voidkit.guard.server.CombatFeature
@@ -102,9 +102,7 @@ object GuardBootstrap {
     fun assembleHub(server: MinecraftServer): GuardHub {
         hub?.let { return it }
         val g = GuardHub()
-        // GServer 由加载器入口注入的工厂造（NeoForge/Forge/Fabric 各自一份）——
-        // 本文件不 import 任何加载器类，换加载器零改动。
-        g.server = GuardPlatforms.newServer(server)
+        g.server = NeoforgeServer(server)
         g.channel = channel ?: error("通道未注入（入口没调 bootstrap(channel)？）")
         g.config = GuardStore.load()
         g.db = GuardDb(ConfigFiles.resolve(g.config.databaseFile)).also { it.open() }

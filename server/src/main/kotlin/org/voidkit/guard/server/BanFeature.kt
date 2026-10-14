@@ -8,7 +8,7 @@ import org.voidkit.core.api.events.VPlayerJoin
 import org.voidkit.core.util.Msg
 import org.voidkit.guard.common.Fingerprint
 import org.voidkit.guard.platform.GPlayer
-import org.voidkit.guard.platform.GuardPlatforms
+import org.voidkit.guard.platform.neoforge.NeoforgePlayer
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -39,7 +39,7 @@ class BanFeature : GuardFeature() {
     /** 走 core 的 VEvent 抽象（不直接监听 NeoForge 事件），与套件其他插件一致。 */
     override fun onPlayerJoin(e: VPlayerJoin) {
         if (!enabled) return
-        val gp = GuardPlatforms.newPlayer(e.player)
+        val gp = NeoforgePlayer(e.player)
         val keys = buildList {
             add("uuid" to gp.uuid)
             add("name" to gp.name.lowercase())
@@ -65,8 +65,6 @@ class BanFeature : GuardFeature() {
             if (hub.config.banIp && player.ip.isNotBlank()) add("ip" to player.ip)
             if (fp != null) {
                 if (hub.config.banMachine && fp.machine.isNotBlank()) add("machine" to fp.machine)
-                if (hub.config.banMac) fp.macs.forEachIndexed { i, m -> add("mac$i" to m) }
-                if (hub.config.banQQ) fp.qq.forEachIndexed { i, q -> add("qq$i" to q) }
             }
         }
         val hit = hub.db.matchBan(keys) ?: return null
@@ -104,8 +102,6 @@ class BanFeature : GuardFeature() {
                 add("name" to identity.name.lowercase())
                 if (cfg.banIp && identity.ip.isNotBlank()) add("ip" to identity.ip)
                 if (cfg.banMachine && identity.machine.isNotBlank()) add("machine" to identity.machine)
-                if (cfg.banMac) identity.macs.forEachIndexed { i, m -> add("mac$i" to m) }
-                if (cfg.banQQ) identity.qq.forEachIndexed { i, q -> add("qq$i" to q) }
             }
         }.distinct()
 
@@ -148,8 +144,6 @@ class BanFeature : GuardFeature() {
             if (cfg.banIp && s.player.ip.isNotBlank()) add("ip" to s.player.ip)
             if (fp != null) {
                 if (cfg.banMachine && fp.machine.isNotBlank()) add("machine" to fp.machine)
-                if (cfg.banMac) fp.macs.forEachIndexed { i, m -> add("mac$i" to m) }
-                if (cfg.banQQ) fp.qq.forEachIndexed { i, q -> add("qq$i" to q) }
             }
         }.distinct()
         banKeys(keys, reason, admin, days = cfg.defaultBanDays, target = s.player.name)
@@ -207,7 +201,7 @@ class BanFeature : GuardFeature() {
             com.google.gson.JsonParser.parseString(json).asJsonObject
         }.getOrNull() ?: return 0 to 0
         val arr = runCatching { root.getAsJsonArray("bans") }.getOrNull() ?: return 0 to 0
-        val okTypes = setOf("ip", "machine", "mac", "mac0", "mac1", "mac2", "mac3", "qq", "qq0", "qq1", "qq2", "uuid", "name")
+        val okTypes = setOf("ip", "machine", "uuid", "name")
         var imported = 0
         var skipped = 0
         for (e in arr) {
@@ -304,7 +298,7 @@ class BanFeature : GuardFeature() {
         val type = target.substring(0, idx).lowercase()
         val value = target.substring(idx + 1)
         if (value.isBlank()) return null
-        val ok = type == "ip" || type == "machine" || type == "mac" || type == "qq" || type == "uuid" || type == "name"
+        val ok = type == "ip" || type == "machine" || type == "uuid" || type == "name"
         return if (ok) type to value else null
     }
 
@@ -391,8 +385,7 @@ class BanFeature : GuardFeature() {
                 add("name" to id.name.lowercase())
                 if (id.ip.isNotBlank()) add("ip" to id.ip)
                 if (id.machine.isNotBlank()) add("machine" to id.machine)
-                id.macs.forEachIndexed { i, m -> add("mac$i" to m) }
-                id.qq.forEachIndexed { i, q -> add("qq$i" to q) }
+
             }
         )
         val region = IpRegion.lookup(id.ip)
@@ -400,8 +393,7 @@ class BanFeature : GuardFeature() {
         Msg.info(source, "UUID：${id.uuid}")
         Msg.info(source, "最近 IP：${id.ip.ifBlank { "未知" }}${if (region.isNotBlank()) "（$region）" else ""}")
         Msg.info(source, "机器码：${id.machine.ifBlank { "未知" }}")
-        Msg.info(source, "网卡：${if (id.macs.isEmpty()) "未知" else id.macs.joinToString(", ")}")
-        Msg.info(source, "QQ 记录：${if (id.qq.isEmpty()) "未采集到" else id.qq.joinToString(", ")}")
+
 
         // 同源账号：换号重进在这行面前无效 —— 机器码/网卡跟着硬件走
         val related = hub.db.relatedIdentities(id)
@@ -478,8 +470,6 @@ class BanFeature : GuardFeature() {
                     "ip", id.ip,
                     "ipRegion", region,
                     "machine", id.machine,
-                    "macs", ApiJson.arr(id.macs),
-                    "qq", ApiJson.arr(id.qq),
                     "firstSeen", id.firstSeen,
                     "lastSeen", id.lastSeen,
                 ),

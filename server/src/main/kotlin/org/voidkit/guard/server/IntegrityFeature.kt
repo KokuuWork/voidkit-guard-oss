@@ -11,7 +11,7 @@ import org.voidkit.core.api.events.VPlayerJoin
 import org.voidkit.core.api.events.VPlayerQuit
 import org.voidkit.core.util.Msg
 import org.voidkit.guard.common.IntegrityMode
-import org.voidkit.guard.platform.GuardPlatforms
+import org.voidkit.guard.platform.neoforge.NeoforgePlayer
 
 /**
  * 模块一：客户端完整性校验（智能识别 / 哈希锁）。
@@ -37,6 +37,7 @@ class IntegrityFeature : GuardFeature() {
         const val NODE_FENCE = "voidkit.guard.fence"
     }
 
+
     override val id = "guard_integrity"
     override val displayName = "客户端完整性校验"
     override val description = "智能识别 / 哈希锁双模式：进服握手 + 会话保活，防改客户端、防透视模组"
@@ -46,12 +47,12 @@ class IntegrityFeature : GuardFeature() {
     /** 走 core 的 VEvent 抽象（不直接监听 NeoForge 事件），与套件其他插件一致。 */
     override fun onPlayerJoin(e: VPlayerJoin) {
         if (!enabled || !hub.config.enabled) return
-        hub.sessions.onJoin(GuardPlatforms.newPlayer(e.player))
+        hub.sessions.onJoin(NeoforgePlayer(e.player))
     }
 
     override fun onPlayerQuit(e: VPlayerQuit) {
         if (!enabled) return
-        hub.sessions.onQuit(GuardPlatforms.newPlayer(e.player))
+        hub.sessions.onQuit(NeoforgePlayer(e.player))
     }
 
     // ---------- 周期 ----------
@@ -403,8 +404,7 @@ class IntegrityFeature : GuardFeature() {
                         "mods", r?.mods?.size ?: 0,
                         "signals", r?.signals?.size ?: 0,
                         "machine", r?.fingerprint?.machine?.take(16) ?: "",
-                        "macs", r?.fingerprint?.macs?.size ?: 0,
-                        "qq", r?.fingerprint?.qq?.size ?: 0,
+
                     )
                 },
             )

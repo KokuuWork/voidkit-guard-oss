@@ -145,8 +145,7 @@ class DeepScanFeature : GuardFeature() {
                         add("name" to id.name.lowercase())
                         if (id.ip.isNotBlank()) add("ip" to id.ip)
                         if (id.machine.isNotBlank()) add("machine" to id.machine)
-                        id.macs.forEachIndexed { i, m -> add("mac$i" to m) }
-                        id.qq.forEachIndexed { i, q -> add("qq$i" to q) }
+
                     }
                 )
             },
@@ -318,7 +317,7 @@ object GuardVerdict {
         val ipRegion = identity?.ip?.let { IpRegion.lookup(it) } ?: ""
         val ipText = identity?.ip?.ifBlank { "未知" } ?: "未知"
         lines.add("连接：&f$ipText&7${if (ipRegion.isNotBlank()) " &7($ipRegion)" else ""}｜机器码 &f${identity?.machine?.take(12)?.ifBlank { "未采集" } ?: "未采集"}")
-        lines.add("网卡 &f${identity?.macs?.size ?: 0}&7 个｜QQ 记录 &f${identity?.qq?.size ?: 0}&7 个")
+        lines.add("机器码 &f${identity?.machine?.take(12)?.ifBlank { "未采集" } ?: "未采集"}")
 
         // ---- 同源账号（小号挖掘） ----
         if (related.isNotEmpty()) {
@@ -335,7 +334,7 @@ object GuardVerdict {
             lines.add("客户端：&f${session.clientBrand}&7｜Agent &f${session.agent}&7｜mod &f${session.mods.size}&7 个")
             val env = session.env
             if (env.cpu.isNotBlank() || env.gpu.isNotBlank()) {
-                lines.add("环境：&f${env.osName} ${env.osVersion}&7｜&f${env.cpu.take(40)}&7｜&f${env.gpu.take(40)}&7｜&f${env.ramMb}MB&7｜&f${env.timezone}")
+                lines.add("环境：&f${env.osName} ${env.osVersion}&7｜&f${env.cpu.take(40)}&7｜&f${env.gpu.take(40)}&7｜&f${env.ramMb}MB")
             }
         } else {
             lines.add("客户端：&7无握手记录（未通过校验或未安装）")

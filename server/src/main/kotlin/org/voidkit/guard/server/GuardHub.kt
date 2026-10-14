@@ -87,16 +87,13 @@ class GuardHub {
             name = s.player.name,
             ip = s.player.ip,
             machine = fp?.machine ?: "",
-            macs = fp?.macs ?: emptyList(),
-            qq = fp?.qq ?: emptyList(),
         )
         audit(
             "guard_pass", actor = s.player.name, target = s.player.uuid, ip = s.player.ip,
             detail = mapOf(
                 "mods" to report.mods.size,
                 "machine" to (fp?.machine?.take(12) ?: ""),
-                "macs" to (fp?.macs?.size ?: 0),
-                "qq" to (fp?.qq?.size ?: 0),
+
             ),
         )
         // auth 之后才拿到完整指纹 —— 这时再撞一次库（登录时只撞了 IP/UUID）
