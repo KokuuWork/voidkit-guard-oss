@@ -6,8 +6,6 @@ import net.minecraftforge.fml.common.Mod
 import net.minecraftforge.fml.loading.FMLEnvironment
 import net.minecraftforge.fml.loading.FMLPaths
 import net.minecraftforge.network.ChannelBuilder
-import net.minecraftforge.network.NetworkDirection
-import net.minecraftforge.network.PacketDistributor
 import net.minecraftforge.network.SimpleChannel
 import org.voidkit.guard.client.GuardClient
 import org.voidkit.guard.client.GuardClientBootstrap
@@ -57,20 +55,18 @@ class ForgeClientEntry {
 
         GuardClientBootstrap.init(ForgeClientChannel(channel))
 
-        // S→C（index 0，与服务端「C→S index 0」对称：同一方向用同一 index）
-        channel.messageBuilder(ForgeClientWirePayload::class.java, 0, NetworkDirection.PLAY_TO_CLIENT)
+        // **单次** 2 参注册（direction == null = 任意方向）。
+        //
+        // ⚠️ 同一个载荷类**不能**注册两次（收一条、发一条）：
+        // SimpleChannel 内部按 Class 索引（byType），重复注册直接抛
+        // IllegalStateException: Class ... already registered（真机实测）。
+        // 这与 NeoForge 的 playBidirectional / 1.20.1 的双 index 写法都不同。
+        channel.messageBuilder(ForgeClientWirePayload::class.java, 0)
             .encoder { msg, buf -> ForgeClientWirePayload.encode(msg, buf) }
             .decoder { buf -> ForgeClientWirePayload.decode(buf) }
             .consumerMainThread { payload, _ ->
                 GuardClient.handleIncoming(payload.wire)
             }
-            .add()
-
-        // C→S（index 1）：客户端不「收」，但发送侧的编解码必须注册，否则发包找不到 codec。
-        channel.messageBuilder(ForgeClientWirePayload::class.java, 1, NetworkDirection.PLAY_TO_SERVER)
-            .encoder { msg, buf -> ForgeClientWirePayload.encode(msg, buf) }
-            .decoder { buf -> ForgeClientWirePayload.decode(buf) }
-            .consumerMainThread { _, _ -> }
             .add()
 
         channel.build()

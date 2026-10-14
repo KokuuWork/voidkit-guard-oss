@@ -1,8 +1,6 @@
 package org.voidkit.guard.platform.forge
 
 import net.minecraft.server.level.ServerPlayer
-import net.minecraftforge.network.NetworkDirection
-import net.minecraftforge.network.PacketDistributor
 import net.minecraftforge.network.SimpleChannel
 import net.minecraftforge.api.distmarker.Dist
 import net.minecraftforge.fml.common.Mod
@@ -18,8 +16,7 @@ import org.voidkit.guard.platform.GuardPlatforms
  *
  * 1. `GuardBootstrap.bootstrap(channel)` —— 注册 Feature + 生命周期（依赖 core）
  * 2. `ForgeServerEvents.register()` —— 服务端游戏事件桥
- * 3. 载荷注册 —— 单频道 `voidkit_guard:wire`，按方向注册两条消息
- *    （index 0 = C→S 收，index 1 = S→C 发；两侧对称注册，id 各自唯一）
+ * 3. 载荷注册 —— 单频道 `voidkit_guard:wire`，**同一个载荷类只注册一次**
  *
  * ## ⚠️ Forge 1.21.1 与 NeoForge 1.21.1 的真实差异（javap 逐个核实）
  *
@@ -77,13 +74,21 @@ class ForgeServerEntry {
         // 2. 服务端游戏事件桥接（加载器 API，不放进 Bootstrap）
         ForgeServerEvents.register()
 
-        // 3. 网络载荷：C→S（index 0，服务端只收这个方向）
-        channel.messageBuilder(ForgeWirePayload::class.java, 0, NetworkDirection.PLAY_TO_SERVER)
+        // 3. 网络载荷：**单次** 2 参注册（方向留空 = 收/发都认）。
+        //
+        //    ⚠️ 为什么不能像 NeoForge/1.20.1 那样「同一个类注册两次」（index 0 收 + index 1 发）：
+        //    SimpleChannel 内部是 `byType: Class -> Message` 的映射，一个 Class **只能注册一次**，
+        //    重复注册直接抛 `IllegalStateException: Class ... already registered`
+        //    （真机 1.21.1 Forge 实测，见 SimpleChannel$MessageBuilder.add）。
+        //    2 参 `messageBuilder` 留下的 `direction == null` 即「任意方向」，
+        //    才是 Forge 的双向写法；编解码注册一次即够（发送侧复用同一 codec）。
+        channel.messageBuilder(ForgeWirePayload::class.java, 0)
             .encoder { msg, buf -> ForgeWirePayload.encode(msg, buf) }
             .decoder { buf -> ForgeWirePayload.decode(buf) }
             .consumerMainThread { payload, ctx ->
                 // consumerMainThread 已在主线程；execute 是幂等防御，统一线程纪律
-                val player = ctx.sender as? ServerPlayer ?: return@consumerMainThread
+                // SimpleChannel 的 ctx.sender 静态类型为 ServerPlayer?（平台可能给 null）
+                val player = ctx.sender ?: return@consumerMainThread
                 val h = GuardBootstrap.hub ?: return@consumerMainThread
                 h.server.execute {
                     h.sessions.onMessage(ForgePlayer(player), payload.wire.id, payload.wire.body)
@@ -91,15 +96,7 @@ class ForgeServerEntry {
             }
             .add()
 
-        // 4. S→C（index 1）：服务端不「收」，但发送侧的编解码必须注册，
-        //    否则发包时找不到 codec。
-        channel.messageBuilder(ForgeWirePayload::class.java, 1, NetworkDirection.PLAY_TO_CLIENT)
-            .encoder { msg, buf -> ForgeWirePayload.encode(msg, buf) }
-            .decoder { buf -> ForgeWirePayload.decode(buf) }
-            .consumerMainThread { _, _ -> }
-            .add()
-
-        // 5. build() —— 真正注册进 NetworkRegistry（FG/Forge 52 必须显式调用）
+        // 4. build() —— 真正注册进 NetworkRegistry（Forge 52 必须显式调用）
         channel.build()
     }
 }

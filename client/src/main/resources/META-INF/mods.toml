@@ -18,14 +18,14 @@ VoidkitGuard 反作弊组件 —— 客户端 Agent。
 # ⚠️ Forge 1.21.1 的 loader modId 是 "forge"。
 [[dependencies.voidkit_guard_client]]
 modId = "forge"
-type = "required"
+mandatory = true
 versionRange = "${neo_range}"
 ordering = "NONE"
 side = "CLIENT"
 
 [[dependencies.voidkit_guard_client]]
 modId = "minecraft"
-type = "required"
+mandatory = true
 versionRange = "${mc_range}"
 ordering = "NONE"
 side = "BOTH"

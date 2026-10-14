@@ -21,21 +21,21 @@ VoidkitGuard 反作弊组件 —— 服务端校验端。
 #    写错会导致 mod 被跳过加载。
 [[dependencies.voidkit_guard]]
 modId = "forge"
-type = "required"
+mandatory = true
 versionRange = "${neo_range}"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.voidkit_guard]]
 modId = "minecraft"
-type = "required"
+mandatory = true
 versionRange = "${mc_range}"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.voidkit_guard]]
 modId = "voidkit_core"
-type = "required"
+mandatory = true
 versionRange = "[${mod_version},)"
 ordering = "AFTER"
 side = "SERVER"
