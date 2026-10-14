@@ -7,7 +7,13 @@ plugins {
 // 公共版本。与 voidkit 主仓库保持一致。
 // ==============================================================
 ext {
-    guardVersion = '1.0.0'
+    // 全部 release 均为测试版（pre-release），不建议用于生产环境。
+    // 与 voidkit 套件其余模块保持同一命名规格：<mod>-0.1.0-beta.1+mc<版本>-<loader>.jar。
+    // ⚠️ 版本字面量必须是合法语义化版本：NeoForge/Forge 的 mods.toml 都拒绝
+    // 'beta0.1' 这类非数字开头形式（InvalidModFileException: Illegal version
+    // number，整个 jar 被跳过不加载，已实测复现）。人类命名 beta0.1 只出现在
+    // release title / notes，不进版本号。
+    guardVersion = '0.1.0-beta.1'
     guardGroup = 'org.voidkit'
     guardAuthors = 'Kokuu Studio'
     guardLicense = 'MIT'
@@ -97,20 +103,35 @@ project(':server') {
         // 组合构建把 org.voidkit:core 替换成本地 :core（并入主仓库时用 project(':core')）
         implementation 'org.voidkit:core:1.2.0'
 
-        // SQLite 驱动：jarJar 内置（约 13MB 原生库）
+        // SQLite 驱动：jarJar 内置（约 13MB 原生库）。
+        // 安全：sqlite-jdbc 带 META-INF/versions/9/module-info.class（named module），
+        // 不会 reads 一切，不会触发 split package。
         jarJar(implementation("org.xerial:sqlite-jdbc")) {
             version {
                 strictly '[3.46,)'
                 prefer rootProject.ext.sqliteVersion
             }
         }
-        // ip2region 绑定（纯 Java ~100KB）；11MB xdb 走 resources
-        jarJar(implementation("org.lionsoul:ip2region")) {
-            version {
-                strictly '[2.7,)'
-                prefer rootProject.ext.ip2regionVersion
-            }
-        }
+        // ip2region 绑定（纯 Java ~100KB）；11MB xdb 走 resources。
+        // ⚠️⚠️ **不能 jarJar**：ip2region 的 jar 既无 module-info.class，manifest 里
+        // 也没有 Automatic-Module-Name —— 作为 unstable automatic module，JPMS 规范
+        // 强制它 reads **所有** 模块。双 jar 架构下服务端/客户端 jar 都含
+        // org.voidkit.guard.common 包（common 是共享源码目录），于是撞 split package：
+        //   ResolutionException: Modules voidkit_guard and voidkit_guard_client
+        //   export package org.voidkit.guard.common to module ip2region
+        // 服务端直接起不来（1.20.1 E2E 实测复现；NeoForge 21.1 的 JarJar 同样把
+        // 嵌套 jar 提为 module，同样会中招）。sqlite/kotlin-stdlib 都带 module-info
+        // （named module）所以没这个问题。
+        // 纯 Java 库、无原生库、无 SPI（无 META-INF/services）→ 直接 shade 进类空间，
+        // 不产生嵌套 jar module，最稳。
+        implementation "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}"
+    }
+
+    // 独立 configuration 只用于 shade：拿 ip2region 的 jar 文件本身，
+    // 不掺进 implementation/runtimeClasspath 的依赖解析。
+    def ip2regionShade = configurations.create('ip2regionShade')
+    dependencies {
+        add('ip2regionShade', "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}")
     }
 
     // ⚠️ 开发运行时从 classes 目录加载，jarJar 的嵌套 jar 不生效 —— SQLite/ip2region
@@ -136,6 +157,21 @@ project(':server') {
     }
 
     jar {
+        // 产物命名规格与套件对齐：<mod>-<version>+mc<mc>-<loader>.jar
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
+        // ip2region shade：把 org/lionsoul/** 的类并进本 jar 的类空间（不 jarJar，见上）。
+        // 只取类，META-INF（MANIFEST/maven 元数据）不要 —— 避免与外层 manifest 冲突。
+        // 🚨 eachFile 必须写在 from(...) 的配置闭包【里面】：from() 返回的就是 jar 任务
+        // 这个 CopySpec 本身，把 eachFile 链在 from 外面会升级成整个 jar 任务的过滤器，
+        // 连本体的 META-INF/neoforge.mods.toml 一起剥掉 → 加载器判定
+        // "not a valid mod file" 静默跳过整个 mod（Forge E2E 假阳性踩坑，2026-10-14）。
+        from(provider {
+            ip2regionShade.files.collect { zipTree(it) }
+        }) {
+            eachFile { details ->
+                if (details.path.startsWith('META-INF/')) details.exclude()
+            }
+        }
         manifest {
             attributes([
                     'Specification-Title'   : modId,
@@ -152,7 +188,7 @@ project(':server') {
 // ==============================================================
 // client —— 客户端 mod（**零 core 依赖**）。
 //
-// 源码 = client/ 自有 + common/ 共享目录。jar 里没有一行服务端代码，
+// 源码 = client/ 自有 + common/ 共享目录（重定位副本）。jar 里没有一行服务端代码，
 // 也没有一行 core 引用 —— 反编译客户端拿不到服务端的密钥处理与检测策略。
 // ==============================================================
 project(':client') {
@@ -161,7 +197,35 @@ project(':client') {
     def modId = 'voidkit_guard_client'
     base { archivesName = modId }
 
-    sourceSets.main.kotlin.srcDir rootProject.file('common/src/main/kotlin')
+    // ---------- 共享包的客户端侧重定位（JPMS split package 修复） ----------
+    // common/ 是共享源码目录：服务端 jar 与客户端 jar 各编一份（客户端零 core 依赖，
+    // 必须独立成 jar）。但两个 jar 若含同名包，NeoForge 1.21.1 的 JPMS 模块层直接判
+    // split package，服务端起不来：
+    //   ResolutionException: Modules voidkit_guard and voidkit_guard_client
+    //   export package org.voidkit.guard.platform to module minecraft
+    // （Forge 1.20.1 的类加载器合并不报错，但同名类会互相遮蔽，同样是隐患。）
+    //
+    // 修法：客户端侧把共享包重定位到 org.voidkit.guard.client.* 名下，
+    // 两个 jar 的包名完全不相交。用「生成式源码重定位」而非 Shadow 字节码
+    // 重定位：不动 jar / reobfJar / jarJar 构建管线，两分支通用，产物可逐行审。
+    // 线上格式不受影响：报文是手写二进制编解码 + 字段级 JSON，不含类名。
+    // （历史坑：ip2region 曾因无 module-info 的 automatic module 撞过同类问题，
+    //   当时用 shade 解决；这里是自己的包，重定位即可。）
+    def relocateCommon = tasks.register('relocateCommon', Sync) {
+        group = 'build'
+        description = '把 common/ 共享源码重定位到 org.voidkit.guard.client.* 供客户端编译'
+        from rootProject.file('common/src/main/kotlin')
+        into layout.buildDirectory.dir('generated/relocated-common')
+        filteringCharset = 'UTF-8'
+        filter { String line ->
+            line.replace('org.voidkit.guard.common', 'org.voidkit.guard.client.common')
+                .replace('org.voidkit.guard.platform', 'org.voidkit.guard.client.platform')
+        }
+    }
+
+    // 客户端不再直接编 common/，编生成的重定位副本
+    sourceSets.main.kotlin.srcDir relocateCommon
+    tasks.named('compileKotlin') { dependsOn relocateCommon }
 
     neoForge {
         version = rootProject.ext.neoVersion
@@ -195,6 +259,8 @@ project(':client') {
     }
 
     jar {
+        // 产物命名规格与套件对齐：<mod>-<version>+mc<mc>-<loader>.jar
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
         manifest {
             attributes([
                     'Specification-Title'   : modId,

@@ -2,6 +2,7 @@ package org.voidkit.guard.platform.neoforge
 
 import net.minecraft.network.protocol.PacketFlow
 import net.minecraft.server.level.ServerPlayer
+import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.IEventBus
 import net.neoforged.fml.ModContainer
 import net.neoforged.fml.common.Mod
@@ -21,8 +22,17 @@ import org.voidkit.guard.platform.GuardPlatforms
  *    只处理 SERVERBOUND（客户端发来的报文）。
  *
  * optional = 没装客户端 Agent 的玩家能连进来，然后被握手超时踢掉。
+ *
+ * ## 为什么限定 DEDICATED_SERVER（dist 守卫）
+ *
+ * 通道 id `voidkit_guard:wire` 全局唯一：客户端 jar 的入口会注册**同一 id**的
+ * 客户端侧副本。若本入口在 CLIENT 端（单人游戏装了双 jar）也构造并注册，
+ * 后注册的一方直接炸（「Cannot register payload ... already registered」）。
+ * 限定专用服后：单人游戏里服务端入口不构造，客户端入口正常注册 —— 双 jar
+ * 共存零冲突，反作弊在单人场景下也本来就没有意义（客户端是自己人的）。
+ * （代价：LAN 联机的整合服主世界也不跑守卫 —— 可接受，局域网默认信任。）
  */
-@Mod(GuardBootstrap.MODID)
+@Mod(value = GuardBootstrap.MODID, dist = [Dist.DEDICATED_SERVER])
 class NeoforgeServerEntry(bus: IEventBus, container: ModContainer) {
 
     init {

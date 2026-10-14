@@ -1,7 +1,7 @@
 package org.voidkit.guard.client.hw
 
 import com.sun.management.OperatingSystemMXBean
-import org.voidkit.guard.common.EnvInfo
+import org.voidkit.guard.client.common.EnvInfo
 import java.lang.management.ManagementFactory
 
 /**

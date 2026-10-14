@@ -1,13 +1,13 @@
 package org.voidkit.guard.client
 
 
-import org.voidkit.guard.common.DeepScanReq
-import org.voidkit.guard.common.DeepScanResult
-import org.voidkit.guard.common.FolderEntry
-import org.voidkit.guard.common.IpEntry
-import org.voidkit.guard.common.ProcEntry
-import org.voidkit.guard.common.Signal
-import org.voidkit.guard.platform.GuardPlatforms
+import org.voidkit.guard.client.common.DeepScanReq
+import org.voidkit.guard.client.common.DeepScanResult
+import org.voidkit.guard.client.common.FolderEntry
+import org.voidkit.guard.client.common.IpEntry
+import org.voidkit.guard.client.common.ProcEntry
+import org.voidkit.guard.client.common.Signal
+import org.voidkit.guard.client.platform.GuardPlatforms
 import java.io.File
 import java.net.NetworkInterface
 import java.util.concurrent.TimeUnit

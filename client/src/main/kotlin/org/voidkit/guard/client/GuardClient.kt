@@ -2,10 +2,10 @@ package org.voidkit.guard.client
 
 import net.minecraft.client.Minecraft
 
-import org.voidkit.guard.common.GuardMsg
-import org.voidkit.guard.common.GuardWire
-import org.voidkit.guard.GuardClientBootstrap
-import org.voidkit.guard.platform.GuardPlatforms
+import org.voidkit.guard.client.common.GuardMsg
+import org.voidkit.guard.client.common.GuardWire
+import org.voidkit.guard.client.GuardClientBootstrap
+import org.voidkit.guard.client.platform.GuardPlatforms
 import java.io.File
 
 /**
@@ -22,17 +22,17 @@ object GuardClient {
             GuardMsg.CHALLENGE -> {
                 // 挑战是签名信封：先验签再解内容。验不过 = 对面不是真服务端
                 // （或被中间代理改过）—— 不回应，让它收不到 auth 自己去超时。
-                val signed = org.voidkit.guard.common.SignedChallenge.decode(wire.body)
+                val signed = org.voidkit.guard.client.common.SignedChallenge.decode(wire.body)
                 if (!GuardKeys.verify(signed.challenge, signed.signature)) {
                     GuardClientBootstrap.LOG.debug("[guard-client] 挑战签名验证失败，已忽略")
                     return
                 }
                 ClientAgent.onChallenge(
-                    org.voidkit.guard.common.Challenge.decode(signed.challenge)
+                    org.voidkit.guard.client.common.Challenge.decode(signed.challenge)
                 )
             }
             GuardMsg.RESULT -> ClientAgent.onResult(
-                org.voidkit.guard.common.Result.decode(wire.body)
+                org.voidkit.guard.client.common.Result.decode(wire.body)
             )
             GuardMsg.KEEPALIVE -> ClientAgent.onKeepalive(wire.body)
             GuardMsg.SCREEN_REQ -> ClientAgent.onScreenReq(wire.body)

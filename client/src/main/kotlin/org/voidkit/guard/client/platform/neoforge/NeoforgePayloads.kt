@@ -1,10 +1,10 @@
-package org.voidkit.guard.platform.neoforge
+package org.voidkit.guard.client.platform.neoforge
 
 import net.minecraft.network.RegistryFriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.ResourceLocation
-import org.voidkit.guard.common.GuardWire
+import org.voidkit.guard.client.common.GuardWire
 
 /**
  * guard 的 NeoForge 载荷实现（**客户端侧**）。

@@ -1,9 +1,9 @@
-package org.voidkit.guard.platform.neoforge
+package org.voidkit.guard.client.platform.neoforge
 
 import net.neoforged.neoforge.network.PacketDistributor
-import org.voidkit.guard.common.GuardWire
-import org.voidkit.guard.platform.GChannel
-import org.voidkit.guard.platform.GPlayer
+import org.voidkit.guard.client.common.GuardWire
+import org.voidkit.guard.client.platform.GChannel
+import org.voidkit.guard.client.platform.GPlayer
 
 /**
  * 加密通道的 NeoForge 实现（**客户端侧**）。

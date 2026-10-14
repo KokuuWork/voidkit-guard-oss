@@ -1,10 +1,10 @@
 package org.voidkit.guard.client.scan
 
 
-import org.voidkit.guard.common.GCrypto
-import org.voidkit.guard.common.SelfIntegrity
-import org.voidkit.guard.common.Signal
-import org.voidkit.guard.platform.GuardPlatforms
+import org.voidkit.guard.client.common.GCrypto
+import org.voidkit.guard.client.common.SelfIntegrity
+import org.voidkit.guard.client.common.Signal
+import org.voidkit.guard.client.platform.GuardPlatforms
 import java.io.File
 import java.lang.management.ManagementFactory
 
