@@ -1,7 +1,7 @@
 package org.voidkit.guard.client.hw
 
-import org.voidkit.guard.common.Fingerprint
-import org.voidkit.guard.common.GCrypto
+import org.voidkit.guard.client.common.Fingerprint
+import org.voidkit.guard.client.common.GCrypto
 import java.io.File
 import java.net.NetworkInterface
 import java.util.concurrent.TimeUnit

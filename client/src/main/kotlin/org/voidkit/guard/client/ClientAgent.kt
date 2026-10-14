@@ -1,20 +1,20 @@
 package org.voidkit.guard.client
 
 import net.minecraft.client.Minecraft
-import org.voidkit.guard.common.Auth
-import org.voidkit.guard.common.Challenge
-import org.voidkit.guard.common.ClientReport
-import org.voidkit.guard.common.DeepScanReq
-import org.voidkit.guard.common.GCrypto
-import org.voidkit.guard.common.GuardMsg
-import org.voidkit.guard.GuardClientBootstrap
-import org.voidkit.guard.common.GuardWire
-import org.voidkit.guard.common.HeapGuard
-import org.voidkit.guard.common.Keepalive
-import org.voidkit.guard.common.Result
-import org.voidkit.guard.common.ScreenChunk
-import org.voidkit.guard.common.ScreenReq
-import org.voidkit.guard.common.SecretBox
+import org.voidkit.guard.client.common.Auth
+import org.voidkit.guard.client.common.Challenge
+import org.voidkit.guard.client.common.ClientReport
+import org.voidkit.guard.client.common.DeepScanReq
+import org.voidkit.guard.client.common.GCrypto
+import org.voidkit.guard.client.common.GuardMsg
+import org.voidkit.guard.client.GuardClientBootstrap
+import org.voidkit.guard.client.common.GuardWire
+import org.voidkit.guard.client.common.HeapGuard
+import org.voidkit.guard.client.common.Keepalive
+import org.voidkit.guard.client.common.Result
+import org.voidkit.guard.client.common.ScreenChunk
+import org.voidkit.guard.client.common.ScreenReq
+import org.voidkit.guard.client.common.SecretBox
 import org.voidkit.guard.client.capture.ScreenCapturer
 import org.voidkit.guard.client.hw.EnvCollector
 import org.voidkit.guard.client.hw.Hardware
@@ -48,7 +48,7 @@ object ClientAgent {
     // ---------------------------------------------------------------- 握手
 
     fun onChallenge(c: Challenge) {
-        if (c.proto != org.voidkit.guard.common.GuardMsg.PROTOCOL) {
+        if (c.proto != org.voidkit.guard.client.common.GuardMsg.PROTOCOL) {
             // 版本不匹配：服务端会因收不到合规 auth 而踢，这里只记 debug
             log("协议版本不匹配：客户端 ${GuardMsg.PROTOCOL} / 服务端 ${c.proto}")
             return

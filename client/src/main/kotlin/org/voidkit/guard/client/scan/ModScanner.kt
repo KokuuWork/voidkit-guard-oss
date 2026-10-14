@@ -1,10 +1,10 @@
 package org.voidkit.guard.client.scan
 
-import org.voidkit.guard.common.GCrypto
-import org.voidkit.guard.common.ModEntry
-import org.voidkit.guard.common.Signal
-import org.voidkit.guard.platform.GModInfo
-import org.voidkit.guard.platform.GuardPlatforms
+import org.voidkit.guard.client.common.GCrypto
+import org.voidkit.guard.client.common.ModEntry
+import org.voidkit.guard.client.common.Signal
+import org.voidkit.guard.client.platform.GModInfo
+import org.voidkit.guard.client.platform.GuardPlatforms
 import java.nio.file.Files
 import java.nio.file.Path
 

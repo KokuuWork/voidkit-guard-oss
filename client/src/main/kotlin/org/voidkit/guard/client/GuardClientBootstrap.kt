@@ -1,8 +1,8 @@
-package org.voidkit.guard
+package org.voidkit.guard.client
 
 import com.mojang.logging.LogUtils
 import org.slf4j.Logger
-import org.voidkit.guard.platform.GChannel
+import org.voidkit.guard.client.platform.GChannel
 
 /**
  * guard **客户端**的装配中心（与服务端的 [GuardBootstrap] 彻底分开）。

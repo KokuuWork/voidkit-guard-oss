@@ -1,8 +1,8 @@
-package org.voidkit.guard.platform.neoforge
+package org.voidkit.guard.client.platform.neoforge
 
 import net.neoforged.fml.ModList
-import org.voidkit.guard.platform.GModInfo
-import org.voidkit.guard.platform.GMods
+import org.voidkit.guard.client.platform.GModInfo
+import org.voidkit.guard.client.platform.GMods
 
 /**
  * NeoForge 的 mod 枚举实现。

@@ -1,13 +1,14 @@
-package org.voidkit.guard.platform.neoforge
+package org.voidkit.guard.client.platform.neoforge
 
 import net.minecraft.network.protocol.PacketFlow
+import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.IEventBus
 import net.neoforged.fml.ModContainer
 import net.neoforged.fml.common.Mod
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent
-import org.voidkit.guard.GuardClientBootstrap
+import org.voidkit.guard.client.GuardClientBootstrap
 import org.voidkit.guard.client.GuardClient
-import org.voidkit.guard.platform.GuardPlatforms
+import org.voidkit.guard.client.platform.GuardPlatforms
 
 /**
  * NeoForge 加载器入口 —— **客户端** jar。
@@ -22,8 +23,15 @@ import org.voidkit.guard.platform.GuardPlatforms
  *
  * channel 标识 `voidkit_guard:wire` 与服务端一致（硬编码，与 modId 解耦），
  * 两侧各注册一份副本即可通信。
+ *
+ * ## 为什么限定 CLIENT（dist 守卫）
+ *
+ * 通道 id 全局唯一：服务端 jar 注册同一 id 的服务端侧副本。若本入口在
+ * 专用服上也被构造并抢先注册，服务端入口注册时直接炸（「Cannot register
+ * payload ... already registered」，E2E 实测复现）。限定客户端后：专用服上
+ * 本 mod 保留在清单里但不构造，双 jar 共存零冲突。
  */
-@Mod(GuardClientBootstrap.MODID)
+@Mod(value = GuardClientBootstrap.MODID, dist = [Dist.CLIENT])
 class NeoforgeClientEntry(bus: IEventBus, container: ModContainer) {
 
     init {

@@ -1,6 +1,6 @@
 package org.voidkit.guard.client
 
-import org.voidkit.guard.common.GCrypto
+import org.voidkit.guard.client.common.GCrypto
 import java.security.KeyFactory
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec

@@ -161,10 +161,16 @@ project(':server') {
         archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
         // ip2region shade：把 org/lionsoul/** 的类并进本 jar 的类空间（不 jarJar，见上）。
         // 只取类，META-INF（MANIFEST/maven 元数据）不要 —— 避免与外层 manifest 冲突。
-        from provider {
+        // 🚨 eachFile 必须写在 from(...) 的配置闭包【里面】：from() 返回的就是 jar 任务
+        // 这个 CopySpec 本身，把 eachFile 链在 from 外面会升级成整个 jar 任务的过滤器，
+        // 连本体的 META-INF/neoforge.mods.toml 一起剥掉 → 加载器判定
+        // "not a valid mod file" 静默跳过整个 mod（Forge E2E 假阳性踩坑，2026-10-14）。
+        from(provider {
             ip2regionShade.files.collect { zipTree(it) }
-        } eachFile { details ->
-            if (details.path.startsWith('META-INF/')) details.exclude()
+        }) {
+            eachFile { details ->
+                if (details.path.startsWith('META-INF/')) details.exclude()
+            }
         }
         manifest {
             attributes([
@@ -182,7 +188,7 @@ project(':server') {
 // ==============================================================
 // client —— 客户端 mod（**零 core 依赖**）。
 //
-// 源码 = client/ 自有 + common/ 共享目录。jar 里没有一行服务端代码，
+// 源码 = client/ 自有 + common/ 共享目录（重定位副本）。jar 里没有一行服务端代码，
 // 也没有一行 core 引用 —— 反编译客户端拿不到服务端的密钥处理与检测策略。
 // ==============================================================
 project(':client') {
@@ -191,7 +197,35 @@ project(':client') {
     def modId = 'voidkit_guard_client'
     base { archivesName = modId }
 
-    sourceSets.main.kotlin.srcDir rootProject.file('common/src/main/kotlin')
+    // ---------- 共享包的客户端侧重定位（JPMS split package 修复） ----------
+    // common/ 是共享源码目录：服务端 jar 与客户端 jar 各编一份（客户端零 core 依赖，
+    // 必须独立成 jar）。但两个 jar 若含同名包，NeoForge 1.21.1 的 JPMS 模块层直接判
+    // split package，服务端起不来：
+    //   ResolutionException: Modules voidkit_guard and voidkit_guard_client
+    //   export package org.voidkit.guard.platform to module minecraft
+    // （Forge 1.20.1 的类加载器合并不报错，但同名类会互相遮蔽，同样是隐患。）
+    //
+    // 修法：客户端侧把共享包重定位到 org.voidkit.guard.client.* 名下，
+    // 两个 jar 的包名完全不相交。用「生成式源码重定位」而非 Shadow 字节码
+    // 重定位：不动 jar / reobfJar / jarJar 构建管线，两分支通用，产物可逐行审。
+    // 线上格式不受影响：报文是手写二进制编解码 + 字段级 JSON，不含类名。
+    // （历史坑：ip2region 曾因无 module-info 的 automatic module 撞过同类问题，
+    //   当时用 shade 解决；这里是自己的包，重定位即可。）
+    def relocateCommon = tasks.register('relocateCommon', Sync) {
+        group = 'build'
+        description = '把 common/ 共享源码重定位到 org.voidkit.guard.client.* 供客户端编译'
+        from rootProject.file('common/src/main/kotlin')
+        into layout.buildDirectory.dir('generated/relocated-common')
+        filteringCharset = 'UTF-8'
+        filter { String line ->
+            line.replace('org.voidkit.guard.common', 'org.voidkit.guard.client.common')
+                .replace('org.voidkit.guard.platform', 'org.voidkit.guard.client.platform')
+        }
+    }
+
+    // 客户端不再直接编 common/，编生成的重定位副本
+    sourceSets.main.kotlin.srcDir relocateCommon
+    tasks.named('compileKotlin') { dependsOn relocateCommon }
 
     neoForge {
         version = rootProject.ext.neoVersion
