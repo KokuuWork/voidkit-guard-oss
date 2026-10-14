@@ -11,7 +11,7 @@ import org.voidkit.core.api.events.VPlayerJoin
 import org.voidkit.core.api.events.VPlayerQuit
 import org.voidkit.core.util.Msg
 import org.voidkit.guard.common.IntegrityMode
-import org.voidkit.guard.platform.neoforge.NeoforgePlayer
+import org.voidkit.guard.platform.GuardPlatforms
 
 /**
  * 模块一：客户端完整性校验（智能识别 / 哈希锁）。
@@ -46,12 +46,12 @@ class IntegrityFeature : GuardFeature() {
     /** 走 core 的 VEvent 抽象（不直接监听 NeoForge 事件），与套件其他插件一致。 */
     override fun onPlayerJoin(e: VPlayerJoin) {
         if (!enabled || !hub.config.enabled) return
-        hub.sessions.onJoin(NeoforgePlayer(e.player))
+        hub.sessions.onJoin(GuardPlatforms.newPlayer(e.player))
     }
 
     override fun onPlayerQuit(e: VPlayerQuit) {
         if (!enabled) return
-        hub.sessions.onQuit(NeoforgePlayer(e.player))
+        hub.sessions.onQuit(GuardPlatforms.newPlayer(e.player))
     }
 
     // ---------- 周期 ----------

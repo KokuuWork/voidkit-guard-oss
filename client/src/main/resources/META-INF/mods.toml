@@ -15,8 +15,9 @@ VoidkitGuard 反作弊组件 —— 客户端 Agent。
 本机信息扫描。独立轻量 mod，不依赖任何套件基础设施。
 '''
 
+# ⚠️ Forge 1.21.1 的 loader modId 是 "forge"。
 [[dependencies.voidkit_guard_client]]
-modId = "neoforge"
+modId = "forge"
 type = "required"
 versionRange = "${neo_range}"
 ordering = "NONE"

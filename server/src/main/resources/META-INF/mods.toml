@@ -17,8 +17,10 @@ VoidkitGuard 反作弊组件 —— 服务端校验端。
 依赖 voidkit_core。
 '''
 
+# ⚠️ Forge 1.21.1 的 loader modId 是 "forge"（不是 "neoforge"）——
+#    写错会导致 mod 被跳过加载。
 [[dependencies.voidkit_guard]]
-modId = "neoforge"
+modId = "forge"
 type = "required"
 versionRange = "${neo_range}"
 ordering = "NONE"

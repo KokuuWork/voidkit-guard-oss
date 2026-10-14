@@ -20,7 +20,7 @@ rootProject.name = 'voidkit-guard'
 // 将来 guard 并入 voidkit 主仓库时：把本文件删掉，guard/build.gradle 里
 // 改成 implementation project(':core') 即可，其余代码零改动。
 // ---------------------------------------------------------------
-includeBuild '../../2026-10-12-15-46-51/kokuucore'
+includeBuild '../../2026-10-12-15-46-51/kokuucore/.worktrees/forge-1211'
 
 // 两个交付 jar：服务端 + 客户端。common 是共享源码目录（不是独立 Gradle 项目），
 // 由两个 jar 各自编译一份，因此客户端 jar 里只有 common + client，没有服务端代码。

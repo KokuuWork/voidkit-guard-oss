@@ -1,6 +1,9 @@
 plugins {
-    id 'net.neoforged.moddev' version '2.0.148' apply false
-    id 'org.jetbrains.kotlin.jvm' version '2.1.0' apply false
+    id 'net.minecraftforge.gradle' version '[7.0.3,8)' apply false
+    // FG7 把 Jar-in-Jar 拆成了独立插件（FG5/6 的 jarJar.enable() 已不存在）。
+    // 官方示例：MDKExamples/jarjar-only/fg7-kotlin
+    id 'net.minecraftforge.jarjar' version '0.2.3' apply false
+    id 'org.jetbrains.kotlin.jvm' version '2.4.21' apply false
 }
 
 // ==============================================================
@@ -19,13 +22,16 @@ ext {
     guardLicense = 'MIT'
 
     mcVersion = '1.21.1'
-    // ⚠️ 声明要宽松：同 21.1.x 系列内部二进制兼容，只锁主次版本。
-    neoVersion = '21.1.209'
-    neoRange = '[21.1.0,21.2.0)'
+    // Forge 1.21.1 = Forge 52.x（ForgeGradle 7）。
+    // ⚠️ Forge 1.21.1 运行时用**官方映射**（不是 SRG）→ **不需要 reobf**，
+    //    build/libs 的 jar 就是发布产物（与 mc/1.20.1 线完全不同）。
+    forgeVersion = '1.21.1-52.1.19'
+    // ⚠️ 变量名沿用 ${neo_range}（mods.toml 里的占位符），值是 Forge 依赖区间。
+    neoRange = '[52,)'
     mcRange = '[1.21.1,1.22)'
-    loaderRange = '[4,)'
+    loaderRange = '[52,)'
 
-    kotlinVersion = '2.1.0'
+    kotlinVersion = '2.4.21'
 
     // 封禁/审计/截屏记录用嵌入式 SQLite（零配置、单文件、WAL）。
     sqliteVersion = '3.53.4.0'
@@ -39,6 +45,7 @@ ext {
 // ==============================================================
 subprojects { p ->
     apply plugin: 'java'
+    apply plugin: 'net.minecraftforge.gradle'
     apply plugin: 'org.jetbrains.kotlin.jvm'
 
     group = rootProject.ext.guardGroup
@@ -48,7 +55,12 @@ subprojects { p ->
     kotlin { jvmToolchain(21) }
 
     repositories {
-        maven { url = 'https://neoforged.forgecdn.net/releases' }
+        // 🚨 ForgeGradle 的 mavenizer —— **必须调用**（官方 MDK 的原样写法）。
+        //    它把 Forge maven 的元数据「maven 化」以供 minecraft.dependency(...) 解析。
+        //    漏了会报：Could not isolate value ...MavenizerValueSource$Parameters。
+        minecraft.mavenizer(it)
+        maven fg.forgeMaven
+        maven fg.minecraftLibsMaven
         maven { url = 'https://maven.aliyun.com/repository/public' }
         maven { url = 'https://maven.aliyun.com/repository/central' }
         mavenCentral()
@@ -75,7 +87,12 @@ subprojects { p ->
 // 客户端不装 core，见下面的 client 块。
 // ==============================================================
 project(':server') {
-    apply plugin: 'net.neoforged.moddev'
+    apply plugin: 'net.minecraftforge.gradle'
+    apply plugin: 'net.minecraftforge.jarjar'
+    // core 已把 kotlin-stdlib 打进它的 jarJar（见 core/build.gradle），
+    // 这里的 stdlib 只服务**开发运行时**；发布产物里 core 提供。
+    // ⚠️ 不要在本项目再 jarJar 一份 kotlin-stdlib —— 两边都是 module-named jar，
+    //    JPMS 会报 "reads more than one module named kotlin.stdlib"。
 
     def modId = 'voidkit_guard'
     base { archivesName = modId }
@@ -83,21 +100,16 @@ project(':server') {
     // common 是共享源码目录，直接编进本 jar（不是独立 Gradle 项目）
     sourceSets.main.kotlin.srcDir rootProject.file('common/src/main/kotlin')
 
-    neoForge {
-        version = rootProject.ext.neoVersion
-        mods {
-            "${modId}" {
-                sourceSet(sourceSets.main)
-            }
-        }
-        runs {
-            // 开发服务端：core + guard 都从 classpath 加载，与整合包真实加载路径一致
-            server {
-                server()
-                programArgument '--nogui'
-            }
-        }
+    // ForgeGradle 7：官方映射（1.21.1 不用 SRG，不需要 reobf）
+    minecraft {
+        mappings channel: 'official', version: rootProject.ext.mcVersion
     }
+
+    dependencies {
+        implementation minecraft.dependency("net.minecraftforge:forge:${rootProject.ext.forgeVersion}")
+    }
+
+    jarJar.register()
 
     dependencies {
         // 组合构建把 org.voidkit:core 替换成本地 :core（并入主仓库时用 project(':core')）
@@ -106,12 +118,16 @@ project(':server') {
         // SQLite 驱动：jarJar 内置（约 13MB 原生库）。
         // 安全：sqlite-jdbc 带 META-INF/versions/9/module-info.class（named module），
         // 不会 reads 一切，不会触发 split package。
-        jarJar(implementation("org.xerial:sqlite-jdbc")) {
-            version {
-                strictly '[3.46,)'
-                prefer rootProject.ext.sqliteVersion
-            }
-        }
+        //
+        // ⚠️ FG7 的 jarJar 依赖写进**名为 jarJar 的 configuration**（不是 jarJar(...)方法）：
+        //    版本语义同 core —— 写精确版本，约束成为 [该版本,)，只锁下界，
+        //    这样整合包里已有更高版本 sqlite-jdbc 时不会冲突。
+        jarJar("org.xerial:sqlite-jdbc:${rootProject.ext.sqliteVersion}")
+        // ⚠️ FG7 的 `jarJar` configuration **只喂打包，不进编译 classpath**
+        //（ModDevGradle 的 jarJar(impl) 会同时给 implementation）。所以 sqlite
+        // 必须**另外**声明一次 implementation，否则 GuardDb 编译期找不到
+        // org.sqlite.SQLiteDataSource（实测报Unresolved reference 'sqlite'）。
+        implementation "org.xerial:sqlite-jdbc:${rootProject.ext.sqliteVersion}"
         // ip2region 绑定（纯 Java ~100KB）；11MB xdb 走 resources。
         // ⚠️⚠️ **不能 jarJar**：ip2region 的 jar 既无 module-info.class，manifest 里
         // 也没有 Automatic-Module-Name —— 作为 unstable automatic module，JPMS 规范
@@ -119,8 +135,7 @@ project(':server') {
         // org.voidkit.guard.common 包（common 是共享源码目录），于是撞 split package：
         //   ResolutionException: Modules voidkit_guard and voidkit_guard_client
         //   export package org.voidkit.guard.common to module ip2region
-        // 服务端直接起不来（1.20.1 E2E 实测复现；NeoForge 21.1 的 JarJar 同样把
-        // 嵌套 jar 提为 module，同样会中招）。sqlite/kotlin-stdlib 都带 module-info
+        // 服务端直接起不来（1.20.1 E2E 实测复现）。sqlite/kotlin-stdlib 都带 module-info
         // （named module）所以没这个问题。
         // 纯 Java 库、无原生库、无 SPI（无 META-INF/services）→ 直接 shade 进类空间，
         // 不产生嵌套 jar module，最稳。
@@ -134,16 +149,11 @@ project(':server') {
         add('ip2regionShade', "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}")
     }
 
-    // ⚠️ 开发运行时从 classes 目录加载，jarJar 的嵌套 jar 不生效 —— SQLite/ip2region
-    // 原生库必须显式补进 run 的 classpath，否则一用就 NoClassDefFoundError。
-    // 🚨 kotlin-stdlib **不要**在这里补：core 的 jarJar 已提供，两边都是 module-named
-    // jar 会 JPMS ResolutionException（"reads more than one module named kotlin.stdlib"）。
-    afterEvaluate {
-        dependencies {
-            additionalRuntimeClasspath "org.xerial:sqlite-jdbc:${rootProject.ext.sqliteVersion}"
-            additionalRuntimeClasspath "org.lionsoul:ip2region:${rootProject.ext.ip2regionVersion}"
-        }
-    }
+    // ⚠️ 开发运行时的原生库补充：**FG7 不需要这一段**。
+    // ModDevGradle 有 `additionalRuntimeClasspath`（NeoForge 线用），
+    // ForgeGradle 7 没有这个 configuration —— 开发运行时直接走
+    // `runtimeOnly` / jarJar 即可（FG7 的 runs 用完整 runtimeClasspath）。
+    // 保留说明是为了对照：NeoForge 线那份仍在 mc/1.20.1 与 master 分支上。
 
     processResources {
         def props = [
@@ -153,17 +163,25 @@ project(':server') {
                 loader_range: rootProject.ext.loaderRange,
         ]
         inputs.properties props
-        filesMatching(['META-INF/neoforge.mods.toml']) { expand props }
+        filesMatching(['META-INF/mods.toml']) { expand props }
+    }
+
+    // ⚠️ FG7 的 jarJar 产出**独立任务**（不是 jar 的一部分）：sqlite-jdbc 走它。
+    //    我们让 jarJar 用规范名，普通 jar 退为 -slim（同 core 的做法）。
+    tasks.named('jarJar', Jar) {
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-forge.jar"
+    }
+    tasks.named('jar', Jar) {
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-forge-slim.jar"
     }
 
     jar {
         // 产物命名规格与套件对齐：<mod>-<version>+mc<mc>-<loader>.jar
-        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
         // ip2region shade：把 org/lionsoul/** 的类并进本 jar 的类空间（不 jarJar，见上）。
         // 只取类，META-INF（MANIFEST/maven 元数据）不要 —— 避免与外层 manifest 冲突。
         // 🚨 eachFile 必须写在 from(...) 的配置闭包【里面】：from() 返回的就是 jar 任务
         // 这个 CopySpec 本身，把 eachFile 链在 from 外面会升级成整个 jar 任务的过滤器，
-        // 连本体的 META-INF/neoforge.mods.toml 一起剥掉 → 加载器判定
+        // 连本体的 META-INF/mods.toml 一起剥掉 → 加载器判定
         // "not a valid mod file" 静默跳过整个 mod（Forge E2E 假阳性踩坑，2026-10-14）。
         from(provider {
             ip2regionShade.files.collect { zipTree(it) }
@@ -192,7 +210,8 @@ project(':server') {
 // 也没有一行 core 引用 —— 反编译客户端拿不到服务端的密钥处理与检测策略。
 // ==============================================================
 project(':client') {
-    apply plugin: 'net.neoforged.moddev'
+    apply plugin: 'net.minecraftforge.gradle'
+    apply plugin: 'net.minecraftforge.jarjar'
 
     def modId = 'voidkit_guard_client'
     base { archivesName = modId }
@@ -227,24 +246,22 @@ project(':client') {
     sourceSets.main.kotlin.srcDir relocateCommon
     tasks.named('compileKotlin') { dependsOn relocateCommon }
 
-    neoForge {
-        version = rootProject.ext.neoVersion
-        mods {
-            "${modId}" {
-                sourceSet(sourceSets.main)
-            }
-        }
+    minecraft {
+        mappings channel: 'official', version: rootProject.ext.mcVersion
     }
+
+    dependencies {
+        implementation minecraft.dependency("net.minecraftforge:forge:${rootProject.ext.forgeVersion}")
+    }
+
+    jarJar.register()
 
     dependencies {
         // ⚠️ 零 core：客户端不装套件基础设施。
         // 客户端不像服务端有 core 提供 Kotlin 运行时 —— 自己 jarJar 一份。
-        jarJar(implementation("org.jetbrains.kotlin:kotlin-stdlib")) {
-            version {
-                strictly '[2.1,)'
-                prefer rootProject.ext.kotlinVersion
-            }
-        }
+        // （服务端 jar 由 core 提供 stdlib；两侧各一份不冲突，因为它们在
+        //   不同的 jar 里、且都是 module-named jar，不会互相 JPMS 冲突。）
+        jarJar("org.jetbrains.kotlin:kotlin-stdlib:${rootProject.ext.kotlinVersion}")
     }
 
     processResources {
@@ -255,12 +272,21 @@ project(':client') {
                 loader_range: rootProject.ext.loaderRange,
         ]
         inputs.properties props
-        filesMatching(['META-INF/neoforge.mods.toml']) { expand props }
+        filesMatching(['META-INF/mods.toml']) { expand props }
+    }
+
+    // ⚠️ FG7 的 jarJar 产出独立任务：客户端的 kotlin-stdlib 走它。
+    //    jarJar 用规范名，普通 jar 退为 -slim。
+    tasks.named('jarJar', Jar) {
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-forge.jar"
+    }
+    tasks.named('jar', Jar) {
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-forge-slim.jar"
     }
 
     jar {
         // 产物命名规格与套件对齐：<mod>-<version>+mc<mc>-<loader>.jar
-        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-forge-slim.jar"
         manifest {
             attributes([
                     'Specification-Title'   : modId,
