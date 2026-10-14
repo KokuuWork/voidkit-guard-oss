@@ -1,11 +1,25 @@
 # VoidkitGuard —— 反作弊组件
 
-NeoForge **1.21.1**，Voidkit 套件（`KokuuWork/voidkit`）的第 9 个组件：**客户端 Agent + 服务端校验**。
+**Minecraft 1.21.1（NeoForge / Forge）与 1.20.1（Forge）**，Voidkit 套件（`KokuuWork/voidkit`）的第 9 个组件：**客户端 Agent + 服务端校验**。
 客户端与服务端拆成两个 jar：服务端依赖 `voidkit_core`，客户端**零依赖**。
 
+## 支持矩阵与分支对应
+
+| Minecraft | 加载器 | 分支 | 服务端 jar | 客户端 Agent jar |
+|---|---|---|---|---|
+| 1.21.1 | NeoForge 21.1.x | `master` | `voidkit_guard-0.1.0-beta.1+mc1.21.1-neoforge.jar` | `voidkit_guard_client-0.1.0-beta.1+mc1.21.1-neoforge.jar` |
+| 1.21.1 | Forge 52.1.x | `mc/1.21.1-forge` | `voidkit_guard-0.1.0-beta.1+mc1.21.1-forge.jar` | `voidkit_guard_client-0.1.0-beta.1+mc1.21.1-forge.jar` |
+| 1.20.1 | Forge 47.4.x | `mc/1.20.1` | `voidkit_guard-0.1.0-beta.1+mc1.20.1-forge.jar` | `voidkit_guard_client-0.1.0-beta.1+mc1.20.1-forge.jar` |
+
+- **本分支 `mc/1.21.1-forge` 对应 1.21.1 + Forge 52.x**；切到其它分支请用上表对应的 jar。
+- 所有版本线的 jar 都挂在**同一个 release**（`0.1.0-beta.1`，Pre-release）下，
+  按文件名后缀区分，勿混用不同版本线的一对 jar。
+- `1.21.1 + Forge` 与 `1.21.1 + NeoForge` 功能完全一致，只是加载器桥不同；
+  `1.20.1` 只有 Forge 线。
+
 ```
-server/build/libs/voidkit_guard-1.0.0.jar         ← 服务端（装服务器，依赖 voidkit_core）
-client/build/libs/voidkit_guard_client-1.0.0.jar  ← 客户端（装玩家机器，零依赖）
+server/build/libs/voidkit_guard-<版本线>-<加载器>.jar         ← 服务端（装服务器，依赖 voidkit_core）
+client/build/libs/voidkit_guard_client-<版本线>-<加载器>.jar  ← 客户端（装玩家机器，零依赖）
 ```
 
 拆成两个 jar 的意义：客户端 jar 物理上不含任何服务端代码 —— 反编译客户端
@@ -29,6 +43,7 @@ client/build/libs/voidkit_guard_client-1.0.0.jar  ← 客户端（装玩家机�
 - **截图只截 MC 游戏窗口**，不抓玩家屏幕上窗口之外的内容（桌面/任务栏/其它应用）。
 - **机器码只上报加盐 SHA-256 哈希**，原文不出客户端；换服盐不同，数据不能跨服串用。
 - 服务端代码里**不存在**网卡/QQ/微信的采集路径（不是开关关掉，是物理上没有）。
+- 因此封禁维度是 **IP + 机器码 + UUID** 三项；「同源账号挖掘」也只按机器码与 IP 交叉比对。
 
 ---
 
@@ -42,10 +57,10 @@ voidkit-guard/
 ├── server/                服务端校验端（modId=voidkit_guard，依赖 voidkit_core）
 │   ├── server/            七个 Feature：完整性 / 封禁 / 截屏 / 审计 / 深度扫描 / 挖掘统计 / 战斗遥测
 │   ├── GuardBootstrap.kt  加载器无关装配（模块注册 + hub + 生命周期）
-│   └── platform/neoforge/ 服务端适配 + @Mod 入口
+│   └── platform/forge/    服务端适配 + @Mod 入口（换加载器只改这一层）
 └── client/                客户端 Agent（modId=voidkit_guard_client，零依赖）
     ├── client/            Agent：握手应答、硬件采集、截屏、深度扫描
-    └── platform/neoforge/ 客户端适配 + @Mod 入口
+    └── platform/forge/    客户端适配 + @Mod 入口
 ```
 
 - **服务端只依赖 core**，客户端**零依赖**，零跨插件 import（套件铁律）。
@@ -56,9 +71,12 @@ voidkit-guard/
   - 关服收尾 → `Platforms.current.registerLifecycle(ServerLifecycleListener)`
   - 事件挂载 → core 的 PluginRegistry（`Feature` 生命周期驱动，`onPlayerJoin/onPlayerQuit` 等 VEvent 回调）
 - **guard 自己只抽象 core 没有的**：`GMods`（mod 清单枚举 ——
-  NeoForge 用 `ModList`，Fabric 用 `FabricLoader`，反作弊特有需求）。
+  NeoForge 用 `ModList`，Forge 同样用 `ModList`，Fabric 用 `FabricLoader`，反作弊特有需求）。
 - 换加载器 = 各加一个 `platform/<loader>/` 入口文件 + 一个 `<Loader>Mods`，
   `common` / `server` / `client` 业务代码零改动。
+  三条版本线已落地：`platform/neoforge/`（1.21.1 NeoForge）、`platform/forge/`（1.21.1 Forge）、
+  1.20.1 Forge 线同理。**三个分支的 `common` 与 `server`/`client` 业务代码逐行相同**，
+  差异只在 platform 层与构建配置 —— 这是「唯一改写面」铁律的实测结论。
 
 ## 2. 七个模块
 
@@ -140,8 +158,10 @@ voidkit-guard/
 ## 6. 部署
 
 ### 安装
-- 服务端 `mods/` 放 `voidkit_guard-1.0.0.jar` + `voidkit_core`。
-- 玩家客户端只放 `voidkit_guard_client-1.0.0.jar`（**不需要** core）。
+- 服务端 `mods/` 放 `voidkit_guard-<版本线>-<加载器>.jar` + **同版本线的** `voidkit_core`。
+- 玩家客户端只放 `voidkit_guard_client-<版本线>-<加载器>.jar`（**不需要** core）。
+- 三条版本线的 jar 都在同一个 release（`0.1.0-beta.1`）里，按文件名后缀挑；
+  **core 与 guard 必须同一版本线**，混用会在加载阶段被依赖检查拦下。
 - 没装客户端的玩家能进服，但握不上手 → 按 `integrityOnFail` 踢/封。
 
 ### 哈希锁开通流程（「先学习，后锁定」）
@@ -204,16 +224,32 @@ API（经 `voidkit_web` 的 ApiRouter 暴露，给管理面板）：
 ## 9. 开发
 
 ```bash
-./build.sh build       # → server/build/libs/voidkit_guard-1.0.0.jar + client/build/libs/voidkit_guard_client-1.0.0.jar
+./build.sh build       # → server/build/libs/voidkit_guard-<版本线>-<加载器>.jar
+                       #   + client/build/libs/voidkit_guard_client-<版本线>-<加载器>.jar
 ./build.sh runServer   # 开发服务端（core + guard 服务端一起从 classpath 加载）
 ```
 
-- JDK 21（`C:/Users/26703/.jdks/jdk-21.0.12.1+1`），Gradle 8.12.1，Kotlin 2.1.0。
-- 依赖 **voidkit_core 1.2.0**（仅服务端，platform 适配层版本）。组合构建消费本地
-  `KokuuWork/voidkit` 仓库的 `:core`（`settings.gradle` 的 includeBuild）——
-  并入主仓库时删掉 includeBuild、依赖改成 `project(':core')` 即可。
+- JDK 21（`C:/Users/26703/.jdks/jdk-21.0.12.1+1`），Kotlin 2.4.21。
+- **构建插件按加载器分**：
+  | 分支 | 插件 | Gradle |
+  |---|---|---|
+  | `master`（1.21.1 NeoForge） | ModDevGradle | 8.12.1 |
+  | `mc/1.20.1`（1.20.1 Forge） | ModDevGradle `legacyforge` | 8.12.1 |
+  | `mc/1.21.1-forge`（1.21.1 Forge，本分支） | **ForgeGradle 7** + `net.minecraftforge.jarjar` | **9.3.1** |
+
+  ForgeGradle 7 没有 ModDevGradle 的 `mods {}` 块与 `additionalRuntimeClasspath`；
+  载荷/channel 注册走老式 `ChannelBuilder` + `SimpleChannel`（**同一载荷类只能注册一次**，
+  收发共用一条 2 参 `messageBuilder`，与 NeoForge 的 `playBidirectional` 语义不同）。
+  Fat jar 由 **`jarJar` 任务**产出（不是 `jar` 任务），本项目约定 `jar` 退 `-slim`。
+  运行时映射是 Mojang 官方映射（不是 SRG）→ **不需要 reobf**，`build/libs` 的 jar 即产物。
+- **本仓库与上游私有仓的差异**：隐私收敛（见第 0 节）—— 只采机器码，
+  不采网卡 MAC / QQ / 微信痕迹，因此服务端代码里没有对应的采集路径与配置开关。
+  其余（协议、加密、七模块、平台层、构建脚本）与上游同源。
+- 依赖 **voidkit_core** 对应版本线（仅服务端，platform 适配层）。
+  组合构建消费本地 `KokuuWork/kokuucore` 的 `:core`（`settings.gradle` 的 includeBuild，
+  本分支指向 core 的 `.worktrees/forge-1211`）—— 并入主仓库时删掉 includeBuild、
+  依赖改成 `project(':core')` 即可。
 - 全 Kotlin，注释讲「为什么」；零 mixin；中文注释。
 - 客户端自己 jarJar 一份 `kotlin-stdlib`（服务端由 core 提供）；服务端运行时
-  **不要**再补 `additionalRuntimeClasspath kotlin-stdlib`，否则 core 的 jarJar
-  嵌套 kotlin 与显式依赖撞成两个 `kotlin.stdlib` 模块，JPMS 直接
-  `ResolutionException`（服务端起不来）。
+  **不要**再补 `kotlin-stdlib`，否则 core 的 jarJar 嵌套 kotlin 与显式依赖撞成两个
+  `kotlin.stdlib` 模块，JPMS 直接 `ResolutionException`（服务端起不来）。
