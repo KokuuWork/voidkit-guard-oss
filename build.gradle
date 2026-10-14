@@ -1,5 +1,8 @@
 plugins {
     id 'net.neoforged.moddev' version '2.0.148' apply false
+    // 1.20.1 及更早（Forge 式包名 + SRG 重混淆）用 legacy 插件。
+    // 与上面是同一插件的「附加组件」，版本号一致。
+    id 'net.neoforged.moddev.legacyforge' version '2.0.148' apply false
     id 'org.jetbrains.kotlin.jvm' version '2.1.0' apply false
 }
 
@@ -18,12 +21,42 @@ ext {
     guardAuthors = 'Kokuu Studio'
     guardLicense = 'MIT'
 
-    mcVersion = '1.21.1'
-    // ⚠️ 声明要宽松：同 21.1.x 系列内部二进制兼容，只锁主次版本。
-    neoVersion = '21.1.209'
-    neoRange = '[21.1.0,21.2.0)'
-    mcRange = '[1.21.1,1.22)'
-    loaderRange = '[4,)'
+    // ------------------------------------------------------------
+    // 目标版本线：-PmcVersion=xxx 切换（默认 1.21.1）
+    //
+    // engine 决定用哪个 Gradle 插件与哪个 DSL 块：
+    //   'neoforge'    → net.neoforged.moddev        + neoForge { version = ... }
+    //   'legacyforge' → net.neoforged.moddev.legacyforge + legacyForge { version = ... }
+    //
+    // 1.20.1 说明（重要）：
+    //   NeoForge 1.20.1 就是 Forge 47.1.x 的分支，**API 包名完全相同**
+    //   （都是 net.minecraftforge.*），且 Forge 的 mod 能直接在 NeoForge 1.20.1 上加载。
+    //   所以 1.20.1 只编译**一份**（按公共 API），同一个 jar 在 Forge 与 NeoForge 1.20.1
+    //   上都能用 —— 不需要为两者各出一版。
+    // ------------------------------------------------------------
+    mcVersion = (findProperty('mcVersion') ?: '1.21.1').toString()
+    def lines = [
+        '1.21.1': [
+            engine: 'neoforge', loader: 'neoforge',
+            ver: '21.1.209', range: '[21.1.0,21.2.0)',
+            mcRange: '[1.21.1,1.22)', loaderRange: '[4,)', java: 21,
+        ],
+        '1.20.1': [
+            engine: 'legacyforge', loader: 'forge',
+            ver: '1.20.1-47.4.20', range: '[47,)',
+            mcRange: '[1.20.1,1.20.2)', loaderRange: '[47,)', java: 17,
+        ],
+    ]
+    def line = lines[mcVersion]
+    if (line == null) throw new GradleException("未知版本线 mcVersion=${mcVersion}（支持 ${lines.keySet()}）")
+
+    engine = line.engine
+    loader = line.loader
+    neoVersion = line.ver
+    neoRange = line.range
+    mcRange = line.mcRange
+    loaderRange = line.loaderRange
+    javaToolchain = line.java as Integer
 
     kotlinVersion = '2.1.0'
 
@@ -35,19 +68,29 @@ ext {
 }
 
 // ==============================================================
-// 所有子项目共用：Java 21 + Kotlin + 仓库 + 编码 + 编译参数
+// 所有子项目共用：Java 按版本线选（21 / 17）+ Kotlin + 仓库 + 编码 + 编译参数
 // ==============================================================
 subprojects { p ->
     apply plugin: 'java'
+    // 按版本线选插件：1.20.1 及更早走 legacy（Forge 式包名 + SRG 重混淆）
+    if (rootProject.ext.engine == 'legacyforge') {
+        apply plugin: 'net.neoforged.moddev.legacyforge'
+    } else {
+        apply plugin: 'net.neoforged.moddev'
+    }
     apply plugin: 'org.jetbrains.kotlin.jvm'
 
     group = rootProject.ext.guardGroup
     version = rootProject.ext.guardVersion
 
-    java.toolchain.languageVersion = JavaLanguageVersion.of(21)
-    kotlin { jvmToolchain(21) }
+    // 编译器 toolchain 按版本线选（1.21.1 → JDK 21 / 1.20.1 → JDK 17）。
+    // 🚨 1.20.x 的 createMinecraftArtifacts（NeoFormRuntime 解反编译）本身就跑不起来
+    //    在 JDK 21 上 —— 所以 build.sh 会让 Gradle 自己也跑在 JDK 17 上。
+    java.toolchain.languageVersion = JavaLanguageVersion.of(rootProject.ext.javaToolchain)
+    kotlin { jvmToolchain(rootProject.ext.javaToolchain) }
 
     repositories {
+        // NeoForge 制品国内被 DNS 污染，走官方 CDN（详见 mirror.init.gradle）
         maven { url = 'https://neoforged.forgecdn.net/releases' }
         maven { url = 'https://maven.aliyun.com/repository/public' }
         maven { url = 'https://maven.aliyun.com/repository/central' }
@@ -63,6 +106,9 @@ subprojects { p ->
     }
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
         compilerOptions {
+            jvmTarget.set(rootProject.ext.javaToolchain == 17
+                ? org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+                : org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
             freeCompilerArgs.add('-Xjvm-default=all')
         }
     }
@@ -75,26 +121,38 @@ subprojects { p ->
 // 客户端不装 core，见下面的 client 块。
 // ==============================================================
 project(':server') {
-    apply plugin: 'net.neoforged.moddev'
-
     def modId = 'voidkit_guard'
     base { archivesName = modId }
 
     // common 是共享源码目录，直接编进本 jar（不是独立 Gradle 项目）
     sourceSets.main.kotlin.srcDir rootProject.file('common/src/main/kotlin')
 
-    neoForge {
-        version = rootProject.ext.neoVersion
-        mods {
-            "${modId}" {
-                sourceSet(sourceSets.main)
+    // 版本线不同 → 用的 DSL 块也不同：
+    //   新版 NeoForge  : neoForge    { version = "21.1.209" }
+    //   1.20.1 legacy  : legacyForge { version = "1.20.1-47.4.20" }
+    if (rootProject.ext.engine == 'legacyforge') {
+        legacyForge {
+            version = rootProject.ext.neoVersion
+            mods {
+                "${modId}" {
+                    sourceSet(sourceSets.main)
+                }
             }
         }
-        runs {
-            // 开发服务端：core + guard 都从 classpath 加载，与整合包真实加载路径一致
-            server {
-                server()
-                programArgument '--nogui'
+    } else {
+        neoForge {
+            version = rootProject.ext.neoVersion
+            mods {
+                "${modId}" {
+                    sourceSet(sourceSets.main)
+                }
+            }
+            runs {
+                // 开发服务端：core + guard 都从 classpath 加载，与整合包真实加载路径一致
+                server {
+                    server()
+                    programArgument '--nogui'
+                }
             }
         }
     }
@@ -119,8 +177,7 @@ project(':server') {
         // org.voidkit.guard.common 包（common 是共享源码目录），于是撞 split package：
         //   ResolutionException: Modules voidkit_guard and voidkit_guard_client
         //   export package org.voidkit.guard.common to module ip2region
-        // 服务端直接起不来（1.20.1 E2E 实测复现；NeoForge 21.1 的 JarJar 同样把
-        // 嵌套 jar 提为 module，同样会中招）。sqlite/kotlin-stdlib 都带 module-info
+        // 服务端直接起不来（E2E 实测复现）。sqlite/kotlin-stdlib 都带 module-info
         // （named module）所以没这个问题。
         // 纯 Java 库、无原生库、无 SPI（无 META-INF/services）→ 直接 shade 进类空间，
         // 不产生嵌套 jar module，最稳。
@@ -145,6 +202,9 @@ project(':server') {
         }
     }
 
+    // ⚠️ 文件名随版本线变：
+    //   1.20.5+ / NeoForge → META-INF/neoforge.mods.toml
+    //   1.20.1 及更早（Forge）→ META-INF/mods.toml
     processResources {
         def props = [
                 mod_version : project.version,
@@ -153,17 +213,18 @@ project(':server') {
                 loader_range: rootProject.ext.loaderRange,
         ]
         inputs.properties props
-        filesMatching(['META-INF/neoforge.mods.toml']) { expand props }
+        filesMatching(['META-INF/neoforge.mods.toml', 'META-INF/mods.toml']) { expand props }
     }
 
     jar {
-        // 产物命名规格与套件对齐：<mod>-<version>+mc<mc>-<loader>.jar
-        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
+        // 产物命名规格：模组名-模组版本+mc版本-加载器
+        //   例：voidkit_guard-1.0.0+mc1.21.1-neoforge.jar / voidkit_guard-1.0.0+mc1.20.1-forge.jar
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-${rootProject.ext.loader}.jar"
         // ip2region shade：把 org/lionsoul/** 的类并进本 jar 的类空间（不 jarJar，见上）。
         // 只取类，META-INF（MANIFEST/maven 元数据）不要 —— 避免与外层 manifest 冲突。
         // 🚨 eachFile 必须写在 from(...) 的配置闭包【里面】：from() 返回的就是 jar 任务
         // 这个 CopySpec 本身，把 eachFile 链在 from 外面会升级成整个 jar 任务的过滤器，
-        // 连本体的 META-INF/neoforge.mods.toml 一起剥掉 → 加载器判定
+        // 连本体的 META-INF/mods.toml 和 jarJar payload 一起剥掉 → 加载器判定
         // "not a valid mod file" 静默跳过整个 mod（Forge E2E 假阳性踩坑，2026-10-14）。
         from(provider {
             ip2regionShade.files.collect { zipTree(it) }
@@ -172,6 +233,27 @@ project(':server') {
                 if (details.path.startsWith('META-INF/')) details.exclude()
             }
         }
+        manifest {
+            attributes([
+                    'Specification-Title'   : modId,
+                    'Specification-Vendor'  : rootProject.ext.guardAuthors,
+                    'Specification-Version' : '1',
+                    'Implementation-Title'  : 'server',
+                    'Implementation-Version': project.version,
+                    'Implementation-Vendor' : rootProject.ext.guardAuthors,
+            ])
+        }
+    }
+
+    // ⚠️⚠️ 1.20.1（legacyforge）的**发布 jar 不由 `jar` 任务产出**：
+    //     - `jar`      → `build/devlibs/`，**开发态**（官方映射名，只能 dev 环境用）
+    //     - `reobfJar` → `build/libs/`，**重混淆后的发布态**（SRG 名，正式服要用这个）
+    //    `reobfJar` 是 MDG 注册的**另一个** Jar 任务，**不会**继承 `jar` 上设的
+    //    archiveFileName —— 不显式配就会退回 Gradle 默认名 `voidkit_guard-1.0.0.jar`，
+    //    把版本线信息丢掉（多版本/多加载器发布时无法一眼分辨）。
+    //    `tasks.matching{}.configureEach{}` 是惰性的：对 1.21.x 线（没有这个任务）零影响。
+    tasks.matching { it.name == 'reobfJar' }.configureEach {
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-${rootProject.ext.loader}.jar"
         manifest {
             attributes([
                     'Specification-Title'   : modId,
@@ -192,25 +274,13 @@ project(':server') {
 // 也没有一行 core 引用 —— 反编译客户端拿不到服务端的密钥处理与检测策略。
 // ==============================================================
 project(':client') {
-    apply plugin: 'net.neoforged.moddev'
-
     def modId = 'voidkit_guard_client'
     base { archivesName = modId }
 
-    // ---------- 共享包的客户端侧重定位（JPMS split package 修复） ----------
-    // common/ 是共享源码目录：服务端 jar 与客户端 jar 各编一份（客户端零 core 依赖，
-    // 必须独立成 jar）。但两个 jar 若含同名包，NeoForge 1.21.1 的 JPMS 模块层直接判
-    // split package，服务端起不来：
-    //   ResolutionException: Modules voidkit_guard and voidkit_guard_client
-    //   export package org.voidkit.guard.platform to module minecraft
-    // （Forge 1.20.1 的类加载器合并不报错，但同名类会互相遮蔽，同样是隐患。）
-    //
-    // 修法：客户端侧把共享包重定位到 org.voidkit.guard.client.* 名下，
-    // 两个 jar 的包名完全不相交。用「生成式源码重定位」而非 Shadow 字节码
-    // 重定位：不动 jar / reobfJar / jarJar 构建管线，两分支通用，产物可逐行审。
-    // 线上格式不受影响：报文是手写二进制编解码 + 字段级 JSON，不含类名。
-    // （历史坑：ip2region 曾因无 module-info 的 automatic module 撞过同类问题，
-    //   当时用 shade 解决；这里是自己的包，重定位即可。）
+    // ---------- 共享包的客户端侧重定位（与 master 同构，见 master 版注释） ----------
+    // NeoForge 1.21.1：两 jar 共享包名会撞 JPMS split package 直接起不来。
+    // Forge 1.20.1：类加载器合并下同名类互相遮蔽（NeoforgePayloads 两侧内容
+    // 还不同），是潜伏雷。统一用生成式源码重定位，两分支客户端包名完全不相交。
     def relocateCommon = tasks.register('relocateCommon', Sync) {
         group = 'build'
         description = '把 common/ 共享源码重定位到 org.voidkit.guard.client.* 供客户端编译'
@@ -227,11 +297,22 @@ project(':client') {
     sourceSets.main.kotlin.srcDir relocateCommon
     tasks.named('compileKotlin') { dependsOn relocateCommon }
 
-    neoForge {
-        version = rootProject.ext.neoVersion
-        mods {
-            "${modId}" {
-                sourceSet(sourceSets.main)
+    if (rootProject.ext.engine == 'legacyforge') {
+        legacyForge {
+            version = rootProject.ext.neoVersion
+            mods {
+                "${modId}" {
+                    sourceSet(sourceSets.main)
+                }
+            }
+        }
+    } else {
+        neoForge {
+            version = rootProject.ext.neoVersion
+            mods {
+                "${modId}" {
+                    sourceSet(sourceSets.main)
+                }
             }
         }
     }
@@ -255,12 +336,25 @@ project(':client') {
                 loader_range: rootProject.ext.loaderRange,
         ]
         inputs.properties props
-        filesMatching(['META-INF/neoforge.mods.toml']) { expand props }
+        filesMatching(['META-INF/neoforge.mods.toml', 'META-INF/mods.toml']) { expand props }
     }
 
     jar {
-        // 产物命名规格与套件对齐：<mod>-<version>+mc<mc>-<loader>.jar
-        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-neoforge.jar"
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-${rootProject.ext.loader}.jar"
+        manifest {
+            attributes([
+                    'Specification-Title'   : modId,
+                    'Specification-Vendor'  : rootProject.ext.guardAuthors,
+                    'Specification-Version' : '1',
+                    'Implementation-Title'  : 'client',
+                    'Implementation-Version': project.version,
+                    'Implementation-Vendor' : rootProject.ext.guardAuthors,
+            ])
+        }
+    }
+
+    tasks.matching { it.name == 'reobfJar' }.configureEach {
+        archiveFileName = "${modId}-${project.version}+mc${rootProject.ext.mcVersion}-${rootProject.ext.loader}.jar"
         manifest {
             attributes([
                     'Specification-Title'   : modId,

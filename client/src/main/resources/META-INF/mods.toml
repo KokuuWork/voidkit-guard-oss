@@ -15,16 +15,18 @@ VoidkitGuard 反作弊组件 —— 客户端 Agent。
 本机信息扫描。独立轻量 mod，不依赖任何套件基础设施。
 '''
 
+# ⚠️ Forge 1.20.1 的 mods.toml 只认 mandatory = true/false（NeoForge 1.20.2+ 的
+#    type = "required" 字段在这里会让 Forge 拒绝加载整个 jar）。
 [[dependencies.voidkit_guard_client]]
-modId = "neoforge"
-type = "required"
+modId = "forge"
+mandatory = true
 versionRange = "${neo_range}"
 ordering = "NONE"
 side = "CLIENT"
 
 [[dependencies.voidkit_guard_client]]
 modId = "minecraft"
-type = "required"
+mandatory = true
 versionRange = "${mc_range}"
 ordering = "NONE"
 side = "BOTH"

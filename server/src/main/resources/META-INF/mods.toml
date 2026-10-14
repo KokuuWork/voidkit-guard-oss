@@ -17,23 +17,25 @@ VoidkitGuard 反作弊组件 —— 服务端校验端。
 依赖 voidkit_core。
 '''
 
+# ⚠️ Forge 1.20.1 的 mods.toml 只认 mandatory = true/false（NeoForge 1.20.2+ 的
+#    type = "required" 字段在这里会让 Forge 拒绝加载整个 jar）。
 [[dependencies.voidkit_guard]]
-modId = "neoforge"
-type = "required"
+modId = "forge"
+mandatory = true
 versionRange = "${neo_range}"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.voidkit_guard]]
 modId = "minecraft"
-type = "required"
+mandatory = true
 versionRange = "${mc_range}"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.voidkit_guard]]
 modId = "voidkit_core"
-type = "required"
+mandatory = true
 versionRange = "[${mod_version},)"
 ordering = "AFTER"
 side = "SERVER"
