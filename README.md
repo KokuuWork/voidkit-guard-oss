@@ -8,10 +8,12 @@
 ## 🛠 Bug 维修群
 
 > **项目还在测试版（beta），遇到任何问题都欢迎来群里找我们。**
+>
+> 群名：**【MC-玩了X年服务器终于不想玩了】**
 
-### **一键加群** → [`498700382`](https://qm.qq.com/q/498700382)
+### **一键加群** → [`498700382`](https://qm.qq.com/q/ueYTU8T3xK)
 
-[![QQ群](https://img.shields.io/badge/QQ%E7%BE%A4%20%C2%B7%20Bug%20%E7%BB%B4%E4%BF%AE%E7%BE%A4-4f46e5?style=for-the-badge&logo=tencent-qq&label=%E5%8A%A0%E7%BE%A4)](https://qm.qq.com/q/498700382)
+[![QQ群](https://img.shields.io/badge/QQ%E7%BE%A4%20%C2%B7%20Bug%20%E7%BB%B4%E4%BF%AE%E7%BE%A4-4f46e5?style=for-the-badge&logo=tencent-qq&label=%E5%8A%A0%E7%BE%A4)](https://qm.qq.com/q/ueYTU8T3xK)
 
 **这是 Voidkit 的 Bug 维修群。**
 装不上、启动崩、模块不生效、配置改了不生效、和别的 mod 冲突 —— 都来群里说。
