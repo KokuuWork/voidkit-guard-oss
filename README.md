@@ -3,6 +3,25 @@
 **Minecraft 1.21.1（NeoForge / Forge）与 1.20.1（Forge）**，Voidkit 套件（`KokuuWork/voidkit`）的第 9 个组件：**客户端 Agent + 服务端校验**。
 客户端与服务端拆成两个 jar：服务端依赖 `voidkit_core`，客户端**零依赖**。
 
+<div align="center">
+
+## 🛠 Bug 维修群
+
+> **项目还在测试版（beta），遇到任何问题都欢迎来群里找我们。**
+
+### **一键加群** → [`498700382`](https://qm.qq.com/q/498700382)
+
+[![QQ群](https://img.shields.io/badge/QQ%E7%BE%A4%20%C2%B7%20Bug%20%E7%BB%B4%E4%BF%AE%E7%BE%A4-4f46e5?style=for-the-badge&logo=tencent-qq&label=%E5%8A%A0%E7%BE%A4)](https://qm.qq.com/q/498700382)
+
+**这是 Voidkit 的 Bug 维修群。**
+装不上、启动崩、模块不生效、配置改了不生效、和别的 mod 冲突 —— 都来群里说。
+报 bug 请附上：**版本线**（如 1.21.1 Forge）、**服务端日志**、**相关配置**。
+
+</div>
+
+---
+
+
 ## 支持矩阵与分支对应
 
 | Minecraft | 加载器 | 分支 | 服务端 jar | 客户端 Agent jar |
